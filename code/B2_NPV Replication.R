@@ -27,8 +27,8 @@ r = 0.02
 FEDRATE = 0.0499
 
 # Load raw data
-raw_inst <- fread("input/raw_data/Most-Recent-Cohorts-Institution.csv")
-raw_fos <- fread("input/raw_data/Most-Recent-Cohorts-Field-of-Study.csv")
+raw_inst <- fread("../raw_data/Most-Recent-Cohorts-Institution.csv")
+raw_fos <- fread("../raw_data/Most-Recent-Cohorts-Field-of-Study.csv")
 
 # Load ccbasic crosswalk
 xwalk <- fread("input/ccbasic_xwalk.csv")

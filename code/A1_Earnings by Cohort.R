@@ -67,7 +67,7 @@ allyrs <- data.frame()
 CLN_YRS <- function(x) {
   
   # Download file
-  individ_yr <- fread(paste0("input/raw_data/",KEYFILES[x])) %>%
+  individ_yr <- fread(paste0("../raw_data/",KEYFILES[x])) %>%
     clean_names() %>%
     select(unitid, opeid, opeid6, preddeg, control, st_fips,
            ccugprof, ccsizset, ug, costt4_a, costt4_p, all_of(KEYVARS)) %>%
