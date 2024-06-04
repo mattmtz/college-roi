@@ -1,3 +1,2 @@
-#ignore all raw_data/ files
-raw_data/
-_documentation/
+#ignore .Rhistory file
+.Rhistory
