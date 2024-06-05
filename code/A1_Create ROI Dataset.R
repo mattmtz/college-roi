@@ -57,7 +57,7 @@ xwalk <- fread("input/ccbasic_xwalk.csv")
 
 # Identify key variables
 IDVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
-            "ST_FIPS", "REGION", "PREDDEG", "CCBASIC","LOCALE", "LOCALE2", 
+            "ST_FIPS", "REGION", "PREDDEG", "CCBASIC","LOCALE", 
             "ICLEVEL", "CCUGPROF", "CCSIZSET", "MENONLY", "WOMENONLY", 
             "AGE_ENTRY", "OPENADMP", "RELAFFIL","NUMBRANCH", "UGDS",
             "HBCU", "PBI", "ANNHI", "TRIBAL", "AANAPII", "HSI", "NANTI", 
@@ -72,6 +72,7 @@ EARNVARS <- c("MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
 GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP")
 
 ALLVARS <- c(IDVARS, DEBTVARS, EARNVARS, GRADVARS)
+
 # Container dataset
 allyrs <- data.frame()
 
@@ -97,9 +98,12 @@ CLN_YRS <- function(x) {
 # Select relevant variables
 raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows() 
 
-# Find which files have missing data
+#### (2) SUMMARIZE MISSING VARIABLES BY FILE ----------------------------------
+
+# Count obs in each data file
 filecounts <- raw_combination %>% group_by(file_name) %>% count()
 
+# Find which files have missing data
 missingflags <- raw_combination %>%
   group_by(file_name) %>%
   summarise(across(tolower(ALLVARS),  ~sum(is.na(.)))) %>%
@@ -107,16 +111,32 @@ missingflags <- raw_combination %>%
   left_join(filecounts) %>%
   select(file_name, n, everything()) %>%
   mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
-                ~ ifelse(n-.x == 0, "NO DATA", ""))) %>%
+                ~ ifelse(n-.x == 0, 1, 0)))
+
+# Export missing variable summary
+missing_int <- missingflags %>%
+  mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
+                ~ ifelse(.x == 1, "NO DATA", ""))) %>%
   select(-c(file_name, n))
 
+missing_data_summary <- as.data.frame(t(missing_int)) %>%
+  rownames_to_column()
+names(missing_data_summary) <- c("variable", KEYFILES)
 
-missing_data_summary <- as.data.frame(t(missingflags))
-names(missing_data_summary) <- KEYFILES
-fwrite(missing_data_summary, "output/missing_variables_summary.csv",
-       row.names = T)
+fwrite(missing_data_summary, "output/missing_variables_summary.csv")
 
+# Find variables missing in over half of files
+missing_int <- missingflags %>%
+  select(-c(file_name, n)) %>%
+  summarize(across(everything(), ~ sum(.x)))
 
+missing_totals <- as.data.frame(t(missing_int)) %>%
+  rownames_to_column() %>%
+  filter(V1 > length(KEYFILES)/2) %>%
+  # NPT4_OTHER & NPT4_PROG were only used in 2011/2012
+  filter(!rowname %in% c("npt4_other", "npt4_prog"))
+
+#### (3) 
 
 ################# TO INCORPORATE LATER ########################################
 
