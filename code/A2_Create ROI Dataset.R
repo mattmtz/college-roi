@@ -24,6 +24,11 @@ library(FinCal)
 
 #### (0) SETUP ----------------------------------------------------------------
 
+# Define constants
+r = 0.02
+FEDRATE = 0.0499
+
+
 # Identify years with earnings data
 KEYYRS <- c(2003,2005,2007,2009,2011:2014,2018,2019)
 

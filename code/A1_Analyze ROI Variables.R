@@ -20,13 +20,8 @@ library(lubridate)
 library(stringr)
 library(janitor)
 library(openxlsx)
-library(FinCal)
 
 #### (0) SETUP ----------------------------------------------------------------
-
-# Define constants
-r = 0.02
-FEDRATE = 0.0499
 
 # Identify years with earnings data
 KEYYRS <- c(2003,2005,2007,2009,2011:2014,2018,2019)
@@ -55,9 +50,8 @@ GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP")
 ALLVARS <- c(IDVARS, DEBTVARS, EARNVARS, GRADVARS)
 
 # Identify min. required variables for analysis
-KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "ST_FIPS",
-             "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
-             )
+KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "PREDDEG", EARNVARS[1:3],
+             DEBTVARS[1:4])
 
 #### (1) COMBINE INDIVIDUAL FILES ---------------------------------------------
 
@@ -85,12 +79,12 @@ CLN_YRS <- function(x) {
 # Select relevant variables
 raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows() 
 
-#### (2) SUMMARIZE MISSING VARIABLES BY FILE ----------------------------------
+#### (2) SUMMARIZE UNUSABLE DATA BY FILE --------------------------------------
 
 # Count obs in each data file
 filecounts <- raw_combination %>% group_by(file_name) %>% count()
 
-# Find which files have missing data
+# Find which files have missing variables
 missingflags <- raw_combination %>%
   group_by(file_name) %>%
   summarise(across(tolower(ALLVARS),  ~sum(is.na(.)))) %>%
@@ -110,5 +104,40 @@ missing_data_summary <- as.data.frame(t(missing_int)) %>%
   rownames_to_column()
 names(missing_data_summary) <- c("variable", KEYFILES)
 
-fwrite(missing_data_summary, "output/missing_variables_summary.csv")
+# Find number of unusable observations based on earnings/price variables
+unusable <- raw_combination %>%
+  select(file_name, all_of(tolower(KEYVARS))) %>%
+  rename(p6 = md_earn_wne_p6,
+         p8 = md_earn_wne_p8,
+         p10= md_earn_wne_p10) %>%
+  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+         unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
+                                  is.na(npt4_other), 1, 0)) %>%
+  mutate(ovl_unusable = ifelse(unusable_earn + unusable_cost == 0, 0, 1)) %>%
+  group_by(file_name) %>%
+  summarize(tot_unusable = sum(ovl_unusable)) %>%
+  ungroup() %>%
+  left_join(filecounts) %>%
+  mutate(share_unusable = tot_unusable / n) %>%
+  select(file_name, n, tot_unusable, share_unusable)
 
+# Export findings
+fwrite(missing_data_summary, paste0("output/missing_data_summaries/",
+                                    "missing_variables_summary.csv"))
+fwrite(unusable, paste0("output/missing_data_summaries/",
+                        "missing_earnings_or_price_summary.csv"))
+
+# Clean workspace
+rm(missingflags, missing_int, missing_data_summary, unusable); gc()
+
+#### (3) DUPLICATION ISSUES ---------------------------------------------------
+
+# Remove unusable observations
+test_dat <- raw_combination %>%
+  rename(p6 = md_earn_wne_p6,
+         p8 = md_earn_wne_p8,
+         p10= md_earn_wne_p10) %>%
+  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+         unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
+                                  is.na(npt4_other), 1, 0)) %>%
+  filter(unusable_earn == 0 & unusable_cost == 0)
