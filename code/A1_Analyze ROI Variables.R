@@ -130,7 +130,7 @@ fwrite(unusable, paste0("output/missing_data_summaries/",
 # Clean workspace
 rm(missingflags, missing_int, missing_data_summary, unusable); gc()
 
-#### (3) DUPLICATION ISSUES ---------------------------------------------------
+#### (3) DUPLICATION/NAMING ISSUES --------------------------------------------
 
 # Remove unusable observations
 test_dat <- raw_combination %>%
@@ -140,4 +140,33 @@ test_dat <- raw_combination %>%
   mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
          unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
                                   is.na(npt4_other), 1, 0)) %>%
-  filter(unusable_earn == 0 & unusable_cost == 0)
+  filter(unusable_earn == 0 & unusable_cost == 0) %>%
+  select(-starts_with("unusable"))
+
+# Institution name by file_name and OPEID6
+same_name <- test_dat %>%
+  group_by(file_name, opeid6) %>%
+  count(instnm) %>%
+  ungroup() %>%
+  filter(n > 1)
+
+# 56 institutions have multiple observations with the same opeid6/name
+# in the same file
+test_dat %>%
+  filter(instnm %in% same_name$instnm) %>%
+  distinct(instnm) %>% count()
+
+# NOTE: the "main" variable deals with this completely
+test_dat %>%
+  filter(instnm %in% same_name$instnm) %>%
+  filter(main == 1) %>%
+  group_by(file_name, opeid6) %>%
+  count(instnm) %>%
+  ungroup() %>%
+  filter(n > 1) %>% count()
+
+# Institutions do not change names over time
+test_dat %>% group_by(opeid6) %>% 
+  summarize(n = n_distinct(instnm)) %>% 
+  ungroup() %>% 
+  filter(n>1)
