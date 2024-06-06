@@ -84,7 +84,6 @@ raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 # Count obs in each data file
 filecounts <- raw_combination %>% group_by(file_name) %>% count()
 
-# Find which files have missing variables
 missings <- raw_combination %>%
   group_by(file_name) %>%
   summarise(across(tolower(ALLVARS),  ~sum(is.na(.)))) %>%
@@ -92,6 +91,14 @@ missings <- raw_combination %>%
   left_join(filecounts) %>%
   select(file_name, n, everything())
 
+# Find % of variables missing each year
+pct_missings <- missings %>%
+  mutate(across(tolower(ALLVARS), ~ ifelse(.x/n == 0 | .x/n == 1, .x/n,
+                                           format(round(.x/n, 3), 
+                                                  nsmall = 2)))) %>%
+  select(-n)
+
+# Find which files have missing variables
 missingflags <- missings %>%
   mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
                 ~ ifelse(n-.x == 0, 1, 0)))
@@ -124,8 +131,8 @@ unusable <- raw_combination %>%
   select(file_name, n, tot_unusable, share_unusable)
 
 # Export findings
-fwrite(missings, paste0("output/missing_data_summaries/",
-                        "missing_observations_by_variable.csv"))
+fwrite(pct_missings, paste0("output/missing_data_summaries/",
+                            "pct_missing_observations_by_variable.csv"))
 fwrite(missing_data_summary, paste0("output/missing_data_summaries/",
                                     "missing_variables_summary.csv"))
 fwrite(unusable, paste0("output/missing_data_summaries/",
