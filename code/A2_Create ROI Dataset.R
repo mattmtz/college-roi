@@ -24,16 +24,19 @@ library(FinCal)
 
 #### (0) SETUP ----------------------------------------------------------------
 
-# Define constants
-r = 0.02
-FEDRATE = 0.0499
-
-
 # Identify years with earnings data
 KEYYRS <- c(2003,2005,2007,2009,2011:2014,2018,2019)
 
-# Variables that need deflating
-DEFL_VARS <- c(paste0("md_earn_wne_p",c(6,8,10)), "net_price")
+# School characteristics - only available in most recent datafile
+IDVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "CCBASIC",
+            "LOCALE", "CCUGPROF", "CCSIZSET", "MENONLY", "WOMENONLY", 
+            "RELAFFIL", "HBCU", "PBI", "ANNHI", "TRIBAL", "AANAPII", "HSI", 
+            "NANTI")
+
+# Key variables for analysis
+KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "MAIN", "PREDDEG",
+             "MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10", "NPT4_PUB", 
+             "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER", "DEBT_MDN")
 
 # List key files
 KEYFILES <- c(paste0("MERGED",KEYYRS,"_", 
@@ -54,17 +57,56 @@ cohorts <- fread("input/cohort_xwalk.csv")
 # Load ccbasic crosswalk
 xwalk <- fread("input/ccbasic_xwalk.csv")
 
+#### (1) COMBINE INDIVIDUAL FILES ---------------------------------------------
 
+# Function for processing individual datasets
+allyrs <- data.frame()
+CLN_YRS <- function(x) {
+  
+  # Download file
+  individ_yr <- fread(paste0("../raw_data/",KEYFILES[x])) %>%
+    select(any_of(KEYVARS)) %>%
+    mutate(across(c(KEYVARS[1:6]), as.character)) %>%
+    mutate(across(c(KEYVARS[7:14]), as.numeric)) %>%
+    clean_names() %>%
+    # Add years & file name
+    mutate(year = paste0(KEYYRS[x],"_",str_sub(as.character(KEYYRS[x]+1),-2)),
+           file_name = KEYFILES[x])
+  
+  # Add to overall dataset
+  allyrs <- bind_rows(allyrs, individ_yr)
+  
+  return(allyrs)
+}
+
+allyrs <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
+
+# Get university characteristics
+desc <- fread(paste0("../raw_data/",KEYFILES[length(KEYFILES)])) %>%
+  select(all_of(IDVARS)) %>%
+  clean_names() %>%
+  mutate()
 
 #### (2) CLEAN DATASET --------------------------------------------------------
 
+# Create usable data
+filtered_df <- allyrs %>%
+  rename(p6 = md_earn_wne_p6,
+         p8 = md_earn_wne_p8,
+         p10= md_earn_wne_p10) %>%
+  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+         unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
+                                  is.na(npt4_other), 1, 0)) %>%
+  filter(unusable_earn == 0 & unusable_cost == 0) %>%
+  select(-starts_with("unusable")) %>%
+  left_join(desc)
+
 # De-code relevant variables
-decoded_data <- filtered_data %>%
+decoded_data <- filtered_df %>%
   left_join(xwalk) %>%
   select(-ccbasic) %>%
   rename(ccbasic = cln_ccbasic) %>%
   mutate(
-    debt_mdn = as.numeric(debt_mdn),
     iclevel = factor(iclevel, levels = c(1,2,3),
                      labels=c("4-year","2-year","Less than 2-year")),
     control = factor(control, levels = c(1,2,3), 
@@ -73,13 +115,6 @@ decoded_data <- filtered_data %>%
     preddeg = factor(preddeg, levels = seq(0,4), 
                      labels = c("Not classified", "Certificate", "Associate's",
                                 "Bachelor's", "Graduate")),
-    openadmp = case_when(
-      openadmp == 1 ~ "Yes",
-      openadmp == 2 ~ "No",
-      T             ~ "Does not admit first time students"),
-    adm_rate = ifelse(is.na(adm_rate) & openadmp == "Yes", 1, adm_rate),
-    grad_rate = ifelse(is.na(c150_l4_pooled_supp), c150_4_pooled_supp,
-                       c150_l4_pooled_supp),
     region = factor(region, levels = seq(0,9),
                     labels = c("U.S. Service Schools", 
                                "New England (CT, ME, MA, NH, RI, VT)", 
@@ -91,8 +126,6 @@ decoded_data <- filtered_data %>%
                                "Rocky Mountains (CO, ID, MT, UT, WY)",
                                "Far West (AK, CA, HI, NV, OR, WA)",
                                "Outlying Areas (AS, FM, GU, MH, MP, PR, PW, VI)"))) %>%
-  mutate(grad_rate = ifelse(grad_rate == "PS", NA, grad_rate)) %>%
-  mutate(grad_rate = as.numeric(grad_rate)) %>%
   droplevels()
 
 # Create enrollment categories, create flag for institutions reporting together
@@ -107,11 +140,3 @@ cln_decoded_data <- decoded_data %>%
 # De-duplicate
 deduped_data <- cln_decoded_data %>%
   distinct(instnm,stabbr, .keep_all = T)
-
-# Remove institutions with no program data
-program_data <- raw_fos %>%
-  clean_names() %>%
-  filter(!is.na(unitid), !is.na(opeid6)) %>%
-  distinct(unitid, opeid6)
-
-scorecard <- inner_join(deduped_data, program_data)
