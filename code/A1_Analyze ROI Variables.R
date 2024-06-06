@@ -85,12 +85,14 @@ raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 filecounts <- raw_combination %>% group_by(file_name) %>% count()
 
 # Find which files have missing variables
-missingflags <- raw_combination %>%
+missings <- raw_combination %>%
   group_by(file_name) %>%
   summarise(across(tolower(ALLVARS),  ~sum(is.na(.)))) %>%
   ungroup() %>%
   left_join(filecounts) %>%
-  select(file_name, n, everything()) %>%
+  select(file_name, n, everything())
+
+missingflags <- missings %>%
   mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
                 ~ ifelse(n-.x == 0, 1, 0)))
 
@@ -122,6 +124,8 @@ unusable <- raw_combination %>%
   select(file_name, n, tot_unusable, share_unusable)
 
 # Export findings
+fwrite(missings, paste0("output/missing_data_summaries/",
+                        "missing_observations_by_variable.csv"))
 fwrite(missing_data_summary, paste0("output/missing_data_summaries/",
                                     "missing_variables_summary.csv"))
 fwrite(unusable, paste0("output/missing_data_summaries/",

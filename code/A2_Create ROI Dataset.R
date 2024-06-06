@@ -28,15 +28,22 @@ library(FinCal)
 KEYYRS <- c(2003,2005,2007,2009,2011:2014,2018,2019)
 
 # School characteristics - only available in most recent datafile
-IDVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "CCBASIC",
-            "LOCALE", "CCUGPROF", "CCSIZSET", "MENONLY", "WOMENONLY", 
-            "RELAFFIL", "HBCU", "PBI", "ANNHI", "TRIBAL", "AANAPII", "HSI", 
-            "NANTI")
+IDVARS <- c("UNITID", "OPEID6", "INSTNM", "CCBASIC", "LOCALE", "CCUGPROF", 
+            "CCSIZSET", "MENONLY", "WOMENONLY", "RELAFFIL", "HBCU", "PBI", 
+            "ANNHI", "TRIBAL", "AANAPII", "HSI", "NANTI")
 
 # Key variables for analysis
-KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "MAIN", "PREDDEG",
-             "MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10", "NPT4_PUB", 
-             "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER", "DEBT_MDN")
+KEYVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR", 
+             "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
+             "NUMBRANCH", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
+             "MD_EARN_WNE_P10", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
+             "NPT4_OTHER", "DEBT_MDN")
+
+# List variables to convert to strings
+CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")
+
+# NOTE: KEYVARS only includes variables with data in all years, except:
+# ST_FIPS, NUMBRANCH, UGDS_MEN, UGDS_WOMEN, PCT_PELL
 
 # List key files
 KEYFILES <- c(paste0("MERGED",KEYYRS,"_", 
@@ -55,7 +62,8 @@ cps <- read.xlsx("input/r-cpi-u-rs-alllessfe.xlsx", sheet = 1,
 cohorts <- fread("input/cohort_xwalk.csv")
 
 # Load ccbasic crosswalk
-xwalk <- fread("input/ccbasic_xwalk.csv")
+xwalk <- fread("input/ccbasic_xwalk.csv") %>%
+  mutate(across(everything(), as.character))
 
 #### (1) COMBINE INDIVIDUAL FILES ---------------------------------------------
 
@@ -66,8 +74,8 @@ CLN_YRS <- function(x) {
   # Download file
   individ_yr <- fread(paste0("../raw_data/",KEYFILES[x])) %>%
     select(any_of(KEYVARS)) %>%
-    mutate(across(c(KEYVARS[1:6]), as.character)) %>%
-    mutate(across(c(KEYVARS[7:14]), as.numeric)) %>%
+    mutate(across(c(CHARVARS), as.character)) %>%
+    mutate(across(!c(CHARVARS), as.numeric)) %>%
     clean_names() %>%
     # Add years & file name
     mutate(year = paste0(KEYYRS[x],"_",str_sub(as.character(KEYYRS[x]+1),-2)),
@@ -84,8 +92,8 @@ allyrs <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 # Get university characteristics
 desc <- fread(paste0("../raw_data/",KEYFILES[length(KEYFILES)])) %>%
   select(all_of(IDVARS)) %>%
-  clean_names() %>%
-  mutate()
+  mutate(across(any_of(c(CHARVARS)), as.character)) %>%
+  clean_names()
 
 #### (2) CLEAN DATASET --------------------------------------------------------
 
@@ -103,9 +111,6 @@ filtered_df <- allyrs %>%
 
 # De-code relevant variables
 decoded_data <- filtered_df %>%
-  left_join(xwalk) %>%
-  select(-ccbasic) %>%
-  rename(ccbasic = cln_ccbasic) %>%
   mutate(
     iclevel = factor(iclevel, levels = c(1,2,3),
                      labels=c("4-year","2-year","Less than 2-year")),
@@ -140,3 +145,9 @@ cln_decoded_data <- decoded_data %>%
 # De-duplicate
 deduped_data <- cln_decoded_data %>%
   distinct(instnm,stabbr, .keep_all = T)
+
+# Add in characteristics
+full_dat <- deduped_data %>%
+  left_join(xwalk) %>%
+  select(-ccbasic) %>%
+  rename(ccbasic = cln_ccbasic)
