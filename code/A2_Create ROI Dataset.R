@@ -37,7 +37,7 @@ KEYVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
              "NUMBRANCH", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
              "MD_EARN_WNE_P10", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
-             "NPT4_OTHER", "DEBT_MDN")
+             "NPT4_OTHER")
 
 # List variables to convert to strings
 CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")

@@ -24,7 +24,7 @@ library(openxlsx)
 #### (0) SETUP ----------------------------------------------------------------
 
 # Identify years with earnings data
-KEYYRS <- c(2003,2005,2007,2009,2011:2014,2018,2019)
+KEYYRS <- c(2009,2011:2014,2018,2019)
 
 # List key files
 KEYFILES <- c(paste0("MERGED",KEYYRS,"_", 
@@ -45,7 +45,7 @@ DEBTVARS <- c("NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER", "DEBT_MDN",
 EARNVARS <- c("MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
               "GT_THRESHOLD_P10")
 
-GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP")
+GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP", "C150_L4", "C150_4")
 
 ALLVARS <- c(IDVARS, DEBTVARS, EARNVARS, GRADVARS)
 
@@ -77,31 +77,48 @@ CLN_YRS <- function(x) {
 }
 
 # Select relevant variables
-raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows() 
+raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 
 #### (2) SUMMARIZE UNUSABLE DATA BY FILE --------------------------------------
 
 # Count obs in each data file
-filecounts <- raw_combination %>% group_by(file_name) %>% count()
+filecounts <- raw_combination %>%
+  rename(p6 = md_earn_wne_p6,
+         p8 = md_earn_wne_p8,
+         p10= md_earn_wne_p10) %>%
+  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+         unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
+                                  is.na(npt4_other), 1, 0)) %>%
+  mutate(ovl_unusable = ifelse(unusable_earn + unusable_cost == 0, 
+                               "usable", "unusable")) %>%
+  group_by(file_name, ovl_unusable) %>% 
+  count() %>%
+  ungroup() %>%
+  pivot_wider(id_cols = file_name, 
+              names_from = ovl_unusable, values_from = n) %>%
+  mutate(usable = ifelse(is.na(usable), 0, usable)) %>%
+  mutate(n = usable + unusable)
 
 missings <- raw_combination %>%
   group_by(file_name) %>%
+  filter(!is.na(md_earn_wne_p6) & !is.na(md_earn_wne_p8) & !is.na(md_earn_wne_p10) & 
+           (!is.na(npt4_pub) | !is.na(npt4_priv) | !is.na(npt4_other))) %>%
   summarise(across(tolower(ALLVARS),  ~sum(is.na(.)))) %>%
   ungroup() %>%
   left_join(filecounts) %>%
-  select(file_name, n, everything())
+  select(file_name, n, usable, unusable, everything())
 
 # Find % of variables missing each year
 pct_missings <- missings %>%
-  mutate(across(tolower(ALLVARS), ~ ifelse(.x/n == 0 | .x/n == 1, .x/n,
-                                           format(round(.x/n, 3), 
-                                                  nsmall = 2)))) %>%
+  mutate(across(tolower(ALLVARS), ~ ifelse(.x/usable == 0 | .x/usable == 1, 
+                                           .x/usable, format(round(.x/usable, 3),
+                                                             nsmall = 2)))) %>%
   select(-n)
 
 # Find which files have missing variables
 missingflags <- missings %>%
   mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
-                ~ ifelse(n-.x == 0, 1, 0)))
+                ~ ifelse(usable-.x == 0, 1, 0)))
 
 # Export missing variable summary
 missing_int <- missingflags %>%
@@ -113,30 +130,14 @@ missing_data_summary <- as.data.frame(t(missing_int)) %>%
   rownames_to_column()
 names(missing_data_summary) <- c("variable", KEYFILES)
 
-# Find number of unusable observations based on earnings/price variables
-unusable <- raw_combination %>%
-  select(file_name, all_of(tolower(KEYVARS))) %>%
-  rename(p6 = md_earn_wne_p6,
-         p8 = md_earn_wne_p8,
-         p10= md_earn_wne_p10) %>%
-  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
-         unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
-                                  is.na(npt4_other), 1, 0)) %>%
-  mutate(ovl_unusable = ifelse(unusable_earn + unusable_cost == 0, 0, 1)) %>%
-  group_by(file_name) %>%
-  summarize(tot_unusable = sum(ovl_unusable)) %>%
-  ungroup() %>%
-  left_join(filecounts) %>%
-  mutate(share_unusable = tot_unusable / n) %>%
-  select(file_name, n, tot_unusable, share_unusable)
-
 # Export findings
 fwrite(pct_missings, paste0("output/missing_data_summaries/",
                             "pct_missing_observations_by_variable.csv"))
 fwrite(missing_data_summary, paste0("output/missing_data_summaries/",
                                     "missing_variables_summary.csv"))
-fwrite(unusable, paste0("output/missing_data_summaries/",
-                        "missing_earnings_or_price_summary.csv"))
+fwrite(filecounts %>% mutate(share_unusable = unusable / n),
+       paste0("output/missing_data_summaries/",
+              "missing_earnings_or_price_summary.csv"))
 
 # Clean workspace
 rm(missingflags, missing_int, missing_data_summary, unusable); gc()
