@@ -24,9 +24,6 @@ library(FinCal)
 
 #### (0) SETUP ----------------------------------------------------------------
 
-# Identify years with earnings data
-KEYYRS <- c(2003,2005,2007,2009,2011:2014,2018,2019)
-
 # School characteristics - only available in most recent datafile
 IDVARS <- c("UNITID", "OPEID6", "INSTNM", "CCBASIC", "LOCALE", "CCUGPROF", 
             "CCSIZSET", "MENONLY", "WOMENONLY", "RELAFFIL", "HBCU", "PBI", 
@@ -35,7 +32,7 @@ IDVARS <- c("UNITID", "OPEID6", "INSTNM", "CCBASIC", "LOCALE", "CCUGPROF",
 # Key variables for analysis
 KEYVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR", 
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
-             "NUMBRANCH", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
+             "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
              "MD_EARN_WNE_P10", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
              "NPT4_OTHER")
 
@@ -44,11 +41,6 @@ CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")
 
 # NOTE: KEYVARS only includes variables with data in all years, except:
 # ST_FIPS, NUMBRANCH, UGDS_MEN, UGDS_WOMEN, PCT_PELL
-
-# List key files
-KEYFILES <- c(paste0("MERGED",KEYYRS,"_", 
-                     str_sub(as.character(KEYYRS+1),-2),"_PP.csv"),
-              "Most-Recent-Cohorts-Institution.csv")
 
 # Inflation data
 cps <- read.xlsx("input/r-cpi-u-rs-alllessfe.xlsx", sheet = 1,
@@ -65,7 +57,55 @@ cohorts <- fread("input/cohort_xwalk.csv")
 xwalk <- fread("input/ccbasic_xwalk.csv") %>%
   mutate(across(everything(), as.character))
 
-#### (1) COMBINE INDIVIDUAL FILES ---------------------------------------------
+#### (1) FIND USABLE FILES ----------------------------------------------------
+
+# Get list of relevant files
+ALLFILES <- c(list.files(path = "../raw_data/", pattern = "^(MERGED)"),
+              "Most-Recent-Cohorts-Institution.csv")
+
+# Select files with ROI variables defined
+filedecisions <- data.frame()
+
+FILECHECK <- function(x) {
+  
+  # Download file
+  individ_file <- fread(paste0("../raw_data/", ALLFILES[x])) %>%
+    mutate(file_name = ALLFILES[x]) %>%
+    select(file_name, any_of(KEYVARS[6:length(KEYVARS)])) %>%
+    clean_names() %>%
+    rename(p6 = md_earn_wne_p6,
+           p8 = md_earn_wne_p8,
+           p10= md_earn_wne_p10)
+  
+  # Count total observations
+  obscount <- individ_file %>% group_by(file_name) %>% count() %>% ungroup()
+  
+  # Find number of missing observations
+  missings <- individ_file %>%
+    group_by(file_name) %>%
+    summarize(across(everything(), ~sum(is.na(.)))) %>%
+    ungroup() %>%
+    mutate(across(where(is.numeric), ~ifelse(obscount$n - .x == 0, 1, 0)))
+  
+  # Decide whether file is usable or not
+  file_decision <- missings %>%
+    mutate(usable_earn = ifelse(p6 + p8 + p10 != 0, 0, 1),
+           usable_debt = ifelse(npt4_pub + npt4_priv + npt4_prog + npt4_other
+                                == 4, 0, 1)) %>%
+    mutate(usable_file = ifelse(usable_earn + usable_debt < 2, 0, 1)) %>%
+    select(file_name, usable_file)
+  
+  filedecisions <- bind_rows(filedecisions, file_decision)
+  return(filedecisions)
+}
+
+KEYFILES <- lapply(1:length(ALLFILES), FILECHECK) %>% bind_rows() %>%
+  filter(usable_file == 1)
+
+KEYFILES <- KEYFILES$file_name
+rm(filedecisions, ALLFILES); gc()
+
+#### (1) COMBINE USABLE FILES -------------------------------------------------
 
 # Function for processing individual datasets
 allyrs <- data.frame()
@@ -74,8 +114,8 @@ CLN_YRS <- function(x) {
   # Download file
   individ_yr <- fread(paste0("../raw_data/",KEYFILES[x])) %>%
     select(any_of(KEYVARS)) %>%
-    mutate(across(c(CHARVARS), as.character)) %>%
-    mutate(across(!c(CHARVARS), as.numeric)) %>%
+    mutate(across(all_of(CHARVARS), as.character)) %>%
+    mutate(across(!all_of(CHARVARS), as.numeric)) %>%
     clean_names() %>%
     # Add years & file name
     mutate(year = paste0(KEYYRS[x],"_",str_sub(as.character(KEYYRS[x]+1),-2)),

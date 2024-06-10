@@ -23,14 +23,6 @@ library(openxlsx)
 
 #### (0) SETUP ----------------------------------------------------------------
 
-# Identify years with earnings data
-KEYYRS <- c(2009,2011:2014,2018,2019)
-
-# List key files
-KEYFILES <- c(paste0("MERGED",KEYYRS,"_", 
-                     str_sub(as.character(KEYYRS+1),-2),"_PP.csv"),
-              "Most-Recent-Cohorts-Institution.csv")
-
 # Identify variables by group
 IDVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
             "ST_FIPS", "REGION", "PREDDEG", "CCBASIC","LOCALE", 
@@ -39,7 +31,7 @@ IDVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
             "HBCU", "PBI", "ANNHI", "TRIBAL", "AANAPII", "HSI", "NANTI", 
             "ADM_RATE", "MAIN", "PCTPELL", "UGDS_MEN", "UGDS_WOMEN")
 
-DEBTVARS <- c("NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER", "DEBT_MDN",
+PRICEVARS <- c("NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER", "DEBT_MDN",
               "RPY_7YR_RT")
 
 EARNVARS <- c("MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
@@ -47,18 +39,66 @@ EARNVARS <- c("MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
 
 GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP", "C150_L4", "C150_4")
 
-ALLVARS <- c(IDVARS, DEBTVARS, EARNVARS, GRADVARS)
+STEMVARS <- c(paste0(rep("PCIP", 7), c(10,11,14,15,26:29,40,41)))
+
+ALLVARS <- c(IDVARS, PRICEVARS, EARNVARS, GRADVARS)
 
 # Identify min. required variables for analysis
 KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "PREDDEG", EARNVARS[1:3],
-             DEBTVARS[1:4])
+             PRICEVARS[1:4])
 
-#### (1) COMBINE INDIVIDUAL FILES ---------------------------------------------
+#### (1) FIND USABLE FILES ----------------------------------------------------
 
-# Container dataset
-allyrs <- data.frame()
+# Get list of relevant files
+ALLFILES <- c(list.files(path = "../raw_data/", pattern = "^(MERGED)"),
+              "Most-Recent-Cohorts-Institution.csv")
+
+# Select files with ROI variables defined
+filedecisions <- data.frame()
+
+FILECHECK <- function(x) {
+  
+  # Download file
+  individ_file <- fread(paste0("../raw_data/", ALLFILES[x])) %>%
+    mutate(file_name = ALLFILES[x]) %>%
+    select(file_name, any_of(KEYVARS[6:length(KEYVARS)])) %>%
+    clean_names() %>%
+    rename(p6 = md_earn_wne_p6,
+           p8 = md_earn_wne_p8,
+           p10= md_earn_wne_p10)
+  
+  # Count total observations
+  obscount <- individ_file %>% group_by(file_name) %>% count() %>% ungroup()
+  
+  # Find number of missing observations
+  missings <- individ_file %>%
+    group_by(file_name) %>%
+    summarize(across(everything(), ~sum(is.na(.)))) %>%
+    ungroup() %>%
+    mutate(across(where(is.numeric), ~ifelse(obscount$n - .x == 0, 1, 0)))
+  
+  # Decide whether file is usable or not
+  file_decision <- missings %>%
+    mutate(usable_earn = ifelse(p6 + p8 + p10 != 0, 0, 1),
+           usable_debt = ifelse(npt4_pub + npt4_priv + npt4_prog + npt4_other
+                                == 4, 0, 1)) %>%
+    mutate(usable_file = ifelse(usable_earn + usable_debt < 2, 0, 1)) %>%
+    select(file_name, usable_file)
+  
+  filedecisions <- bind_rows(filedecisions, file_decision)
+  return(filedecisions)
+}
+
+KEYFILES <- lapply(1:length(ALLFILES), FILECHECK) %>% bind_rows() %>%
+  filter(usable_file == 1)
+
+KEYFILES <- KEYFILES$file_name
+
+#### (2) READ IN KEY FILES ----------------------------------------------------
 
 # Function for processing individual datasets
+allyrs <- data.frame()
+
 CLN_YRS <- function(x) {
   
   # Download file
@@ -79,7 +119,7 @@ CLN_YRS <- function(x) {
 # Select relevant variables
 raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 
-#### (2) SUMMARIZE UNUSABLE DATA BY FILE --------------------------------------
+#### (3) SUMMARIZE UNUSABLE DATA BY FILE --------------------------------------
 
 # Count obs in each data file
 filecounts <- raw_combination %>%
@@ -124,7 +164,7 @@ missingflags <- missings %>%
 missing_int <- missingflags %>%
   mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
                 ~ ifelse(.x == 1, "NO DATA", ""))) %>%
-  select(-c(file_name, n))
+  select(-c(file_name, n, usable, unusable))
 
 missing_data_summary <- as.data.frame(t(missing_int)) %>%
   rownames_to_column()
@@ -142,7 +182,7 @@ fwrite(filecounts %>% mutate(share_unusable = unusable / n),
 # Clean workspace
 rm(missingflags, missing_int, missing_data_summary, unusable); gc()
 
-#### (3) DUPLICATION/NAMING ISSUES --------------------------------------------
+#### (4) DUPLICATION/NAMING ISSUES --------------------------------------------
 
 # Remove unusable observations
 test_dat <- raw_combination %>%
