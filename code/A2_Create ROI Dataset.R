@@ -34,7 +34,7 @@ KEYVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
              "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
              "MD_EARN_WNE_P10", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
-             "NPT4_OTHER")
+             "NPT4_OTHER", "DEBT_MDN")
 
 # List variables to convert to strings
 CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")
@@ -54,8 +54,7 @@ cps <- read.xlsx("input/r-cpi-u-rs-alllessfe.xlsx", sheet = 1,
 cohorts <- fread("input/cohort_xwalk.csv")
 
 # Load ccbasic crosswalk
-xwalk <- fread("input/ccbasic_xwalk.csv") %>%
-  mutate(across(everything(), as.character))
+xwalk <- fread("input/ccbasic_xwalk.csv")
 
 #### (1) FIND USABLE FILES ----------------------------------------------------
 
@@ -105,7 +104,7 @@ KEYFILES <- lapply(1:length(ALLFILES), FILECHECK) %>% bind_rows() %>%
 KEYFILES <- KEYFILES$file_name
 rm(filedecisions, ALLFILES); gc()
 
-#### (1) COMBINE USABLE FILES -------------------------------------------------
+#### (2) COMBINE USABLE FILES -------------------------------------------------
 
 # Function for processing individual datasets
 allyrs <- data.frame()
@@ -118,7 +117,7 @@ CLN_YRS <- function(x) {
     mutate(across(!all_of(CHARVARS), as.numeric)) %>%
     clean_names() %>%
     # Add years & file name
-    mutate(year = paste0(KEYYRS[x],"_",str_sub(as.character(KEYYRS[x]+1),-2)),
+    mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]"),
            file_name = KEYFILES[x])
   
   # Add to overall dataset
@@ -129,13 +128,13 @@ CLN_YRS <- function(x) {
 
 allyrs <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 
-# Get university characteristics
+# Get university characteristics from latest data file
 desc <- fread(paste0("../raw_data/",KEYFILES[length(KEYFILES)])) %>%
   select(all_of(IDVARS)) %>%
   mutate(across(any_of(c(CHARVARS)), as.character)) %>%
   clean_names()
 
-#### (2) CLEAN DATASET --------------------------------------------------------
+#### (3) CLEAN DATASET --------------------------------------------------------
 
 # Create usable data
 filtered_df <- allyrs %>%
@@ -152,6 +151,8 @@ filtered_df <- allyrs %>%
 # De-code relevant variables
 decoded_data <- filtered_df %>%
   mutate(
+    adm_rate = ifelse(is.na(adm_rate) & openadmp == "Yes", 1, adm_rate),
+    grad_rate = ifelse(is.na(c150_l4), c150_4, c150_l4),
     iclevel = factor(iclevel, levels = c(1,2,3),
                      labels=c("4-year","2-year","Less than 2-year")),
     control = factor(control, levels = c(1,2,3), 
@@ -173,21 +174,52 @@ decoded_data <- filtered_df %>%
                                "Outlying Areas (AS, FM, GU, MH, MP, PR, PW, VI)"))) %>%
   droplevels()
 
-# Create enrollment categories, create flag for institutions reporting together
-# & drop graduate institutions
+# Create enrollment categories, drop graduate institutions, & clean
+# graduation rate
 cln_decoded_data <- decoded_data %>%
   mutate(ugdssize = forcats::fct_na_value_to_level(
     cut(ugds, breaks = c(0,250,500,1e7), 
-        labels=c("<=250","251-500",">500"), include.lowest=TRUE)),
-    report_as_group = ifelse(numbranch>1,1,0)) %>%
+        labels=c("<=250","251-500",">500"), include.lowest=TRUE))) %>%
   filter(!preddeg %in% c(0,4))
 
 # De-duplicate
 deduped_data <- cln_decoded_data %>%
-  distinct(instnm,stabbr, .keep_all = T)
+  distinct(instnm,stabbr, file_name, .keep_all = T)
 
-# Add in characteristics
+# Add in crosswalks
 full_dat <- deduped_data %>%
+  left_join(cohorts) %>%
   left_join(xwalk) %>%
   select(-ccbasic) %>%
-  rename(ccbasic = cln_ccbasic)
+  rename(ccbasic = ccbasic_decode)
+
+#### (4) CREATE ROI DATASET ---------------------------------------------------
+
+roi_data <- full_dat %>%
+  # create cost measure
+  rowwise() %>%
+  mutate(netprice = mean(c(npt4_pub, npt4_priv, npt4_prog, npt4_other),
+                         na.rm = T)) %>%
+  ungroup() %>%
+  filter(netprice >=0) %>%
+  # Create earnings measures
+  mutate(d8_6 = p8 - p6,
+         d10_8 = p10 - p8) %>%
+  mutate(avg_earn = abs((d10_8 + d8_6)/4)) %>%
+  mutate(p7 = p6 + d8_6/2,
+         p9 = p8 + d10_8/2) %>%
+  mutate(p5 = p6 - avg_earn) %>%
+  mutate(p4 = p5 - avg_earn) %>%
+  mutate(p3 = p4 - avg_earn) %>%
+  mutate(p2 = p3 - avg_earn) %>%
+  # other items
+  mutate(debt_mdn = as.numeric(debt_mdn)) %>%
+  mutate(rop = p10/netprice - 1,
+         debt_roi = p10/debt_mdn - 1) %>%
+  # rankings
+  mutate(rank_rop = min_rank(-round(rop,2)),
+         rank_debt_roi = min_rank(-debt_roi),
+         rank_netprice = min_rank(-round(netprice,2)),
+         rank_earn = min_rank(-p10),
+         rank_debt = min_rank(-debt_mdn),
+         rank_grad_rate = min_rank(-grad_rate))
