@@ -39,7 +39,8 @@ EARNVARS <- c("MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
 
 GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP", "C150_L4", "C150_4")
 
-STEMVARS <- c(paste0(rep("PCIP", 7), c(10,11,14,15,26:29,40,41)))
+STEMVARS <- c(paste0(rep("PCIP", 7), c("01","03","04","11","14","15","26",
+                                       "27", "40", "41", "42")))
 
 ALLVARS <- c(IDVARS, PRICEVARS, EARNVARS, GRADVARS)
 
@@ -103,10 +104,11 @@ CLN_YRS <- function(x) {
   
   # Download file
   individ_yr <- fread(paste0("../raw_data/",KEYFILES[x])) %>%
-    select(any_of(ALLVARS)) %>%
+    select(any_of(c(IDVARS, PRICEVARS, EARNVARS, GRADVARS)), 
+           starts_with("PCIP")) %>%
     clean_names() %>%
     # Add years & file name
-    mutate(year = paste0(KEYYRS[x],"_",str_sub(as.character(KEYYRS[x]+1),-2)),
+    mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]"),
            file_name = KEYFILES[x]) %>%
     mutate(across(everything(), as.character))
   
@@ -118,11 +120,12 @@ CLN_YRS <- function(x) {
 
 # Select relevant variables
 raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
+ALLVARS <- names(raw_combination)[1:(length(names(raw_combination))-2)]
 
 #### (3) SUMMARIZE UNUSABLE DATA BY FILE --------------------------------------
 
-# Count obs in each data file
-filecounts <- raw_combination %>%
+# Filter data to non-missing ROI observations
+filtered_data <- raw_combination %>%
   rename(p6 = md_earn_wne_p6,
          p8 = md_earn_wne_p8,
          p10= md_earn_wne_p10) %>%
@@ -130,7 +133,10 @@ filecounts <- raw_combination %>%
          unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
                                   is.na(npt4_other), 1, 0)) %>%
   mutate(ovl_unusable = ifelse(unusable_earn + unusable_cost == 0, 
-                               "usable", "unusable")) %>%
+                               "usable", "unusable"))
+
+# Count obs in each data file
+filecounts <- filtered_data %>%
   group_by(file_name, ovl_unusable) %>% 
   count() %>%
   ungroup() %>%
@@ -143,32 +149,43 @@ missings <- raw_combination %>%
   group_by(file_name) %>%
   filter(!is.na(md_earn_wne_p6) & !is.na(md_earn_wne_p8) & !is.na(md_earn_wne_p10) & 
            (!is.na(npt4_pub) | !is.na(npt4_priv) | !is.na(npt4_other))) %>%
-  summarise(across(tolower(ALLVARS),  ~sum(is.na(.)))) %>%
+  summarise(across(ALLVARS,  ~sum(is.na(.)))) %>%
   ungroup() %>%
   left_join(filecounts) %>%
   select(file_name, n, usable, unusable, everything())
 
 # Find % of variables missing each year
 pct_missings <- missings %>%
-  mutate(across(tolower(ALLVARS), ~ ifelse(.x/usable == 0 | .x/usable == 1, 
-                                           .x/usable, format(round(.x/usable, 3),
-                                                             nsmall = 2)))) %>%
+  mutate(across(ALLVARS, ~ ifelse(.x/usable == 0 | .x/usable == 1, .x/usable,
+                                  format(round(.x/usable, 3), nsmall = 2)))) %>%
   select(-n)
 
 # Find which files have missing variables
 missingflags <- missings %>%
-  mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
+  mutate(across(ALLVARS[1]:ALLVARS[length(ALLVARS)],
                 ~ ifelse(usable-.x == 0, 1, 0)))
 
 # Export missing variable summary
 missing_int <- missingflags %>%
-  mutate(across(tolower(ALLVARS[1]):tolower(ALLVARS[length(ALLVARS)]),
+  mutate(across(ALLVARS[1]:ALLVARS[length(ALLVARS)],
                 ~ ifelse(.x == 1, "NO DATA", ""))) %>%
   select(-c(file_name, n, usable, unusable))
 
 missing_data_summary <- as.data.frame(t(missing_int)) %>%
   rownames_to_column()
 names(missing_data_summary) <- c("variable", KEYFILES)
+
+# Check for full PCIP measures
+pcip_dat <- filtered_data %>%
+  select(file_name, starts_with("pcip")) %>%
+  mutate(across(starts_with("pcip"), as.numeric)) %>%
+  rowwise() %>%
+  mutate(tot_pcip = sum(across(starts_with("pcip")), na.rm = T)) %>%
+  ungroup() %>%
+  select(-starts_with("pcip")) %>%
+  group_by(file_name) %>%
+  summarize(mn_pcp_fill = mean(tot_pcip)) %>%
+  ungroup()
 
 # Export findings
 fwrite(pct_missings, paste0("output/missing_data_summaries/",
@@ -178,6 +195,9 @@ fwrite(missing_data_summary, paste0("output/missing_data_summaries/",
 fwrite(filecounts %>% mutate(share_unusable = unusable / n),
        paste0("output/missing_data_summaries/",
               "missing_earnings_or_price_summary.csv"))
+
+fwrite(pcip_dat, paste0("output/missing_data_summaries/",
+                        "missing_pcip_summary.csv"))
 
 # Clean workspace
 rm(missingflags, missing_int, missing_data_summary, unusable); gc()
