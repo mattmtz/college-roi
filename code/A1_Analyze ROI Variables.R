@@ -42,8 +42,6 @@ GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP", "C150_L4", "C150_4")
 STEMVARS <- c(paste0(rep("PCIP", 7), c("01","03","04","11","14","15","26",
                                        "27", "40", "41", "42")))
 
-ALLVARS <- c(IDVARS, PRICEVARS, EARNVARS, GRADVARS)
-
 # Identify min. required variables for analysis
 KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "PREDDEG", EARNVARS[1:3],
              PRICEVARS[1:4])

@@ -30,7 +30,11 @@ IDVARS <- c("UNITID", "OPEID6", "INSTNM", "CCBASIC", "LOCALE", "CCUGPROF",
             "ANNHI", "TRIBAL", "AANAPII", "HSI", "NANTI")
 
 # Key variables for analysis
-KEYVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR", 
+KEYVARS <- c("MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10", 
+             "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER")
+
+# Key variables for analysis
+ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
              "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
              "MD_EARN_WNE_P10", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
@@ -70,7 +74,7 @@ FILECHECK <- function(x) {
   # Download file
   individ_file <- fread(paste0("../raw_data/", ALLFILES[x])) %>%
     mutate(file_name = ALLFILES[x]) %>%
-    select(file_name, any_of(KEYVARS[6:length(KEYVARS)])) %>%
+    select(file_name, any_of(KEYVARS)) %>%
     clean_names() %>%
     rename(p6 = md_earn_wne_p6,
            p8 = md_earn_wne_p8,
@@ -112,7 +116,7 @@ CLN_YRS <- function(x) {
   
   # Download file
   individ_yr <- fread(paste0("../raw_data/",KEYFILES[x])) %>%
-    select(any_of(KEYVARS)) %>%
+    select(any_of(ALLVARS), starts_with("PCIP")) %>%
     mutate(across(all_of(CHARVARS), as.character)) %>%
     mutate(across(!all_of(CHARVARS), as.numeric)) %>%
     clean_names() %>%
