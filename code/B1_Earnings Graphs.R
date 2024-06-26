@@ -35,7 +35,7 @@ GraphTheme = theme_classic() +
     legend.background = element_blank())
 
 # Read in data
-graphdat <- fread("../intermediate/full_data.csv")
+graphdat <- fread("../intermediate/roi_data.csv")
 
 #### (1) MEDIAN EARNINGS BY SURVEY YEAR ---------------------------------------
 

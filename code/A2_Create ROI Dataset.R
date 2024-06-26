@@ -188,3 +188,5 @@ roi_data <- full_dat %>%
          rank_earn = min_rank(-p10),
          rank_debt = min_rank(-debt_mdn),
          rank_grad_rate = min_rank(-grad_rate))
+
+fwrite(roi_data, "intermediate/roi_data.csv")
