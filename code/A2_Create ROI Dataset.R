@@ -56,6 +56,9 @@ cps <- read.xlsx("input/r-cpi-u-rs-alllessfe.xlsx", sheet = 1,
   rename(cps_yr = year,
          cps_deflator = avg)
 
+# 2023 deflator value
+Y2023 <- cps[nrow(cps), 2]
+
 # Cohort crosswalk
 cohorts <- fread("input/cohort_xwalk.csv")
 
@@ -148,6 +151,7 @@ deduped_data <- cln_decoded_data %>%
 # Add in crosswalks
 full_dat <- deduped_data %>%
   left_join(cohorts) %>%
+  left_join(cps) %>%
   left_join(xwalk) %>%
   select(-ccbasic) %>%
   rename(ccbasic = ccbasic_decode)
@@ -187,6 +191,10 @@ roi_data <- full_dat %>%
          rank_netprice = min_rank(-round(netprice,2)),
          rank_earn = min_rank(-p10),
          rank_debt = min_rank(-debt_mdn),
-         rank_grad_rate = min_rank(-grad_rate))
+         rank_grad_rate = min_rank(-grad_rate)) %>%
+  mutate(across(c(p2, p3, p4, p5, p6, p7, p8, p9, p10,
+                debt_mdn, netprice, avg_earn), 
+         ~.x*Y2023/cps_deflator, .names = "{.col}_23_dollars"))
 
+# Export data
 fwrite(roi_data, "intermediate/roi_data.csv")
