@@ -34,7 +34,8 @@ IDVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
 PRICEVARS <- c("NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER", "DEBT_MDN",
               "RPY_7YR_RT")
 
-EARNVARS <- c("MD_EARN_WNE_P6" ,"MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
+EARNVARS <- c("MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
+              "MD_EARN_WNE_P7", "MD_EARN_WNE_P9", "MD_EARN_WNE_P11",
               "GT_THRESHOLD_P10")
 
 GRADVARS <- c("C150_L4_POOLED_SUPP", "C150_4_POOLED_SUPP", "C150_L4", "C150_4")
@@ -43,7 +44,7 @@ STEMVARS <- c(paste0(rep("PCIP", 7), c("01","03","04","11","14","15","26",
                                        "27", "40", "41", "42")))
 
 # Identify min. required variables for analysis
-KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "PREDDEG", EARNVARS[1:3],
+KEYVARS <- c("UNITID", "OPEID6", "INSTNM", "STABBR", "PREDDEG", EARNVARS[1:6],
              PRICEVARS[1:4])
 
 #### (1) FIND USABLE FILES ----------------------------------------------------
@@ -62,9 +63,8 @@ FILECHECK <- function(x) {
     mutate(file_name = ALLFILES[x]) %>%
     select(file_name, any_of(KEYVARS[6:length(KEYVARS)])) %>%
     clean_names() %>%
-    rename(p6 = md_earn_wne_p6,
-           p8 = md_earn_wne_p8,
-           p10= md_earn_wne_p10)
+    rename(p6 = md_earn_wne_p6, p7 = md_earn_wne_p7, p8 = md_earn_wne_p8,
+           p9 = md_earn_wne_p9, p10= md_earn_wne_p10, p11 = md_earn_wne_p11)
   
   # Count total observations
   obscount <- individ_file %>% group_by(file_name) %>% count() %>% ungroup()
@@ -78,9 +78,11 @@ FILECHECK <- function(x) {
   
   # Decide whether file is usable or not
   file_decision <- missings %>%
-    mutate(usable_earn = ifelse(p6 + p8 + p10 != 0, 0, 1),
+    mutate(usable_earn1 = ifelse(p6 + p8 + p10 != 0, 0, 1),
+           usable_earn2 = ifelse(p7 + p9 + p11 != 0, 0, 1),
            usable_debt = ifelse(npt4_pub + npt4_priv + npt4_prog + npt4_other
                                 == 4, 0, 1)) %>%
+    mutate(usable_earn = ifelse(usable_earn1 + usable_earn2 == 0, 0, 1)) %>%
     mutate(usable_file = ifelse(usable_earn + usable_debt < 2, 0, 1)) %>%
     select(file_name, usable_file)
   
@@ -92,6 +94,10 @@ KEYFILES <- lapply(1:length(ALLFILES), FILECHECK) %>% bind_rows() %>%
   filter(usable_file == 1)
 
 KEYFILES <- KEYFILES$file_name
+
+# Output list of key files
+keyfiles_out <- data.frame("file_name" = KEYFILES)
+fwrite(keyfiles_out, "intermediate/relevant_files.csv")
 
 #### (2) READ IN KEY FILES ----------------------------------------------------
 
@@ -105,8 +111,10 @@ CLN_YRS <- function(x) {
     select(any_of(c(IDVARS, PRICEVARS, EARNVARS, GRADVARS)), 
            starts_with("PCIP")) %>%
     clean_names() %>%
+    rename(p6 = md_earn_wne_p6, p7 = md_earn_wne_p7, p8 = md_earn_wne_p8,
+           p9 = md_earn_wne_p9, p10= md_earn_wne_p10, p11= md_earn_wne_p11) %>%
     # Add years & file name
-    mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]"),
+    mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]+"),
            file_name = KEYFILES[x]) %>%
     mutate(across(everything(), as.character))
   
@@ -117,19 +125,21 @@ CLN_YRS <- function(x) {
 }
 
 # Select relevant variables
-raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
+raw_combination <- lapply(1:length(KEYFILES), CLN_YRS) %>%
+  bind_rows() %>%
+  mutate(year = ifelse(is.na(year), "most_recent", year))
+
 ALLVARS <- names(raw_combination)[1:(length(names(raw_combination))-2)]
 
 #### (3) SUMMARIZE UNUSABLE DATA BY FILE --------------------------------------
 
 # Filter data to non-missing ROI observations
 filtered_data <- raw_combination %>%
-  rename(p6 = md_earn_wne_p6,
-         p8 = md_earn_wne_p8,
-         p10= md_earn_wne_p10) %>%
-  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+  mutate(unusable_earn1 = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+         unusable_earn2 = ifelse(is.na(p7) | is.na(p9) | is.na(p11), 1, 0),
          unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
                                   is.na(npt4_other), 1, 0)) %>%
+  mutate(unusable_earn = ifelse(unusable_earn1 + unusable_earn2 == 2, 1, 0)) %>%
   mutate(ovl_unusable = ifelse(unusable_earn + unusable_cost == 0, 
                                "usable", "unusable"))
 
@@ -143,11 +153,11 @@ filecounts <- filtered_data %>%
   mutate(usable = ifelse(is.na(usable), 0, usable)) %>%
   mutate(n = usable + unusable)
 
-missings <- raw_combination %>%
+# Count missing obs in each data file
+missings <- filtered_data %>%
   group_by(file_name) %>%
-  filter(!is.na(md_earn_wne_p6) & !is.na(md_earn_wne_p8) & !is.na(md_earn_wne_p10) & 
-           (!is.na(npt4_pub) | !is.na(npt4_priv) | !is.na(npt4_other))) %>%
-  summarise(across(ALLVARS,  ~sum(is.na(.)))) %>%
+  filter(ovl_unusable == "usable") %>%
+  summarise(across(all_of(ALLVARS),  ~sum(is.na(.)))) %>%
   ungroup() %>%
   left_join(filecounts) %>%
   select(file_name, n, usable, unusable, everything())
@@ -198,20 +208,12 @@ fwrite(pcip_dat, paste0("output/missing_data_summaries/",
                         "missing_pcip_summary.csv"))
 
 # Clean workspace
-rm(missingflags, missing_int, missing_data_summary, unusable); gc()
+rm(missingflags, missing_int, missing_data_summary); gc()
 
 #### (4) DUPLICATION/NAMING ISSUES --------------------------------------------
 
 # Remove unusable observations
-test_dat <- raw_combination %>%
-  rename(p6 = md_earn_wne_p6,
-         p8 = md_earn_wne_p8,
-         p10= md_earn_wne_p10) %>%
-  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
-         unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
-                                  is.na(npt4_other), 1, 0)) %>%
-  filter(unusable_earn == 0 & unusable_cost == 0) %>%
-  select(-starts_with("unusable"))
+test_dat <- filtered_data %>% filter(ovl_unusable == "usable")
 
 # Institution name by file_name and OPEID6
 same_name <- test_dat %>%
@@ -236,7 +238,9 @@ test_dat %>%
   filter(n > 1) %>% count()
 
 # Institutions do not change names over time
-test_dat %>% group_by(opeid6) %>% 
+test_dat %>%
+  filter(main == 1) %>%
+  group_by(opeid6, file_name) %>%
   summarize(n = n_distinct(instnm)) %>% 
   ungroup() %>% 
   filter(n>1)

@@ -24,6 +24,10 @@ library(FinCal)
 
 #### (0) SETUP ----------------------------------------------------------------
 
+# Key files
+KEYFILES <- fread("intermediate/relevant_files.csv")
+KEYFILES <- KEYFILES$file_name
+
 # School characteristics - only available in most recent datafile
 IDVARS <- c("UNITID", "OPEID6", "INSTNM", "CCBASIC", "LOCALE", "CCUGPROF", 
             "CCSIZSET", "MENONLY", "WOMENONLY", "RELAFFIL", "HBCU", "PBI", 
@@ -36,15 +40,13 @@ KEYVARS <- c("MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
 # Key variables for analysis
 ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
-             "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P8", 
-             "MD_EARN_WNE_P10", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
+             "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P7",
+             "MD_EARN_WNE_P8", "MD_EARN_WNE_P9", "MD_EARN_WNE_P10",
+             "MD_EARN_WNE_P11", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
              "NPT4_OTHER", "DEBT_MDN")
 
 # List variables to convert to strings
 CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")
-
-# NOTE: KEYVARS only includes variables with data in all years, except:
-# ST_FIPS, NUMBRANCH, UGDS_MEN, UGDS_WOMEN, PCT_PELL
 
 # Inflation data
 cps <- read.xlsx("input/r-cpi-u-rs-alllessfe.xlsx", sheet = 1,
@@ -60,55 +62,7 @@ cohorts <- fread("input/cohort_xwalk.csv")
 # Load ccbasic crosswalk
 xwalk <- fread("input/ccbasic_xwalk.csv")
 
-#### (1) FIND USABLE FILES ----------------------------------------------------
-
-# Get list of relevant files
-ALLFILES <- c(list.files(path = "../raw_data/", pattern = "^(MERGED)"),
-              "Most-Recent-Cohorts-Institution.csv")
-
-# Select files with ROI variables defined
-filedecisions <- data.frame()
-
-FILECHECK <- function(x) {
-  
-  # Download file
-  individ_file <- fread(paste0("../raw_data/", ALLFILES[x])) %>%
-    mutate(file_name = ALLFILES[x]) %>%
-    select(file_name, any_of(KEYVARS)) %>%
-    clean_names() %>%
-    rename(p6 = md_earn_wne_p6,
-           p8 = md_earn_wne_p8,
-           p10= md_earn_wne_p10)
-  
-  # Count total observations
-  obscount <- individ_file %>% group_by(file_name) %>% count() %>% ungroup()
-  
-  # Find number of missing observations
-  missings <- individ_file %>%
-    group_by(file_name) %>%
-    summarize(across(everything(), ~sum(is.na(.)))) %>%
-    ungroup() %>%
-    mutate(across(where(is.numeric), ~ifelse(obscount$n - .x == 0, 1, 0)))
-  
-  # Decide whether file is usable or not
-  file_decision <- missings %>%
-    mutate(usable_earn = ifelse(p6 + p8 + p10 != 0, 0, 1),
-           usable_debt = ifelse(npt4_pub + npt4_priv + npt4_prog + npt4_other
-                                == 4, 0, 1)) %>%
-    mutate(usable_file = ifelse(usable_earn + usable_debt < 2, 0, 1)) %>%
-    select(file_name, usable_file)
-  
-  filedecisions <- bind_rows(filedecisions, file_decision)
-  return(filedecisions)
-}
-
-KEYFILES <- lapply(1:length(ALLFILES), FILECHECK) %>% bind_rows() %>%
-  filter(usable_file == 1)
-
-KEYFILES <- KEYFILES$file_name
-rm(filedecisions, ALLFILES); gc()
-
-#### (2) COMBINE USABLE FILES -------------------------------------------------
+#### (1) COMBINE USABLE FILES -------------------------------------------------
 
 # Function for processing individual datasets
 allyrs <- data.frame()
@@ -120,6 +74,8 @@ CLN_YRS <- function(x) {
     mutate(across(all_of(CHARVARS), as.character)) %>%
     mutate(across(!all_of(CHARVARS), as.numeric)) %>%
     clean_names() %>%
+    rename(p6 = md_earn_wne_p6, p7 = md_earn_wne_p7, p8 = md_earn_wne_p8,
+           p9 = md_earn_wne_p9, p10= md_earn_wne_p10, p11= md_earn_wne_p11) %>%
     # Add years & file name
     mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]"),
            file_name = KEYFILES[x])
@@ -135,20 +91,19 @@ allyrs <- lapply(1:length(KEYFILES), CLN_YRS) %>% bind_rows()
 # Get university characteristics from latest data file
 desc <- fread(paste0("../raw_data/",KEYFILES[length(KEYFILES)])) %>%
   select(all_of(IDVARS)) %>%
-  mutate(across(any_of(c(CHARVARS)), as.character)) %>%
+  mutate(across(any_of(CHARVARS), as.character)) %>%
   clean_names()
 
-#### (3) CLEAN DATASET --------------------------------------------------------
+#### (2) CLEAN DATASET --------------------------------------------------------
 
 # Create usable data
 filtered_df <- allyrs %>%
-  rename(p6 = md_earn_wne_p6,
-         p8 = md_earn_wne_p8,
-         p10= md_earn_wne_p10) %>%
-  mutate(unusable_earn = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+  mutate(unusable_earn1 = ifelse(is.na(p6) | is.na(p8) | is.na(p10), 1, 0),
+         unusable_earn2 = ifelse(is.na(p7) | is.na(p9) | is.na(p11), 1, 0),
          unusable_cost = ifelse(is.na(npt4_pub) & is.na(npt4_priv) &
                                   is.na(npt4_other), 1, 0)) %>%
-  filter(unusable_earn == 0 & unusable_cost == 0) %>%
+  mutate(unusable_earn = ifelse(unusable_earn1 + unusable_earn2 == 2, 1, 0)) %>%
+  filter(unusable_earn + unusable_cost == 0) %>%
   select(-starts_with("unusable")) %>%
   left_join(desc)
 
@@ -197,7 +152,7 @@ full_dat <- deduped_data %>%
   select(-ccbasic) %>%
   rename(ccbasic = ccbasic_decode)
 
-#### (4) CREATE ROI DATASET ---------------------------------------------------
+#### (3) CREATE ROI DATASET ---------------------------------------------------
 
 roi_data <- full_dat %>%
   # create cost measure
@@ -208,10 +163,16 @@ roi_data <- full_dat %>%
   filter(netprice >=0) %>%
   # Create earnings measures
   mutate(d8_6 = p8 - p6,
-         d10_8 = p10 - p8) %>%
-  mutate(avg_earn = abs((d10_8 + d8_6)/4)) %>%
-  mutate(p7 = p6 + d8_6/2,
-         p9 = p8 + d10_8/2) %>%
+         d10_8 = p10 - p8,
+         d9_7 = p9 - p7,
+         d11_9 = p11 - p9) %>%
+  mutate(avg_earn = ifelse(is.na(p11), abs((d10_8 + d8_6)/4),
+                           abs((d11_9 + d9_7)/4))) %>%
+  mutate(p6 = ifelse(is.na(p6), p7 - avg_earn, p6),
+         p7 = ifelse(is.na(p7), p6 + d8_6/2, p7),
+         p8 = ifelse(is.na(p8), p7 + d9_7/2, p8),
+         p9 = ifelse(is.na(p9), p8 + d10_8/2, p9),
+         p10 = ifelse(is.na(p10), p9 + d11_9/2, p10)) %>%
   mutate(p5 = p6 - avg_earn) %>%
   mutate(p4 = p5 - avg_earn) %>%
   mutate(p3 = p4 - avg_earn) %>%
