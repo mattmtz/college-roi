@@ -164,8 +164,10 @@ missings <- filtered_data %>%
 
 # Find % of variables missing each year
 pct_missings <- missings %>%
-  mutate(across(ALLVARS, ~ ifelse(.x/usable == 0 | .x/usable == 1, .x/usable,
-                                  format(round(.x/usable, 3), nsmall = 2)))) %>%
+  mutate(across(any_of(ALLVARS), ~ ifelse(.x/usable == 0 | .x/usable == 1, 
+                                          .x/usable,
+                                          format(round(.x/usable, 3), 
+                                                 nsmall = 2)))) %>%
   select(-n)
 
 # Find which files have missing variables
@@ -185,6 +187,7 @@ names(missing_data_summary) <- c("variable", KEYFILES)
 
 # Check for full PCIP measures
 pcip_dat <- filtered_data %>%
+  filter(ovl_unusable == "usable") %>%
   select(file_name, starts_with("pcip")) %>%
   mutate(across(starts_with("pcip"), as.numeric)) %>%
   rowwise() %>%

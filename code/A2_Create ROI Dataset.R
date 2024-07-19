@@ -1,6 +1,6 @@
 ###---------------------------------------------------------------------------#
 ### Project : COLLEGE SCORECARD ROI
-### Purpose : CREATE DATASET 
+### Purpose : CREATE FULL DATASET 
 ### Author  : MATT MARTINEZ
 ### Audited : NO
 ###---------------------------------------------------------------------------#
@@ -37,13 +37,16 @@ IDVARS <- c("UNITID", "OPEID6", "INSTNM", "CCBASIC", "LOCALE", "CCUGPROF",
 KEYVARS <- c("MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10", 
              "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER")
 
-# Key variables for analysis
+# STEM variables
+STEMVARS <- c(paste0(rep("PCIP", 7), c("01","03","04","11","14","15","26",
+                                       "27", "40", "41", "42")))
+
 ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
              "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P7",
              "MD_EARN_WNE_P8", "MD_EARN_WNE_P9", "MD_EARN_WNE_P10",
              "MD_EARN_WNE_P11", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
-             "NPT4_OTHER", "DEBT_MDN")
+             "NPT4_OTHER", "DEBT_MDN", STEMVARS)
 
 # List variables to convert to strings
 CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")
@@ -186,15 +189,23 @@ roi_data <- full_dat %>%
   mutate(rop = p10/netprice - 1,
          debt_roi = p10/debt_mdn - 1) %>%
   # rankings
+  group_by(year) %>%
   mutate(rank_rop = min_rank(-round(rop,2)),
          rank_debt_roi = min_rank(-debt_roi),
          rank_netprice = min_rank(-round(netprice,2)),
          rank_earn = min_rank(-p10),
          rank_debt = min_rank(-debt_mdn),
          rank_grad_rate = min_rank(-grad_rate)) %>%
+  ungroup() %>%
   mutate(across(c(p2, p3, p4, p5, p6, p7, p8, p9, p10,
                 debt_mdn, netprice, avg_earn), 
          ~.x*Y2023/cps_deflator, .names = "{.col}_23_dollars"))
 
 # Export data
 fwrite(roi_data, "intermediate/roi_data.csv")
+
+# Export dataset for data tool
+data_tool_df <- roi_data %>%
+  select(file_name, year, unitid, opeid, opeid6, instnm, control, stabbr,
+         region, preddeg, iclevel, rop, debt_roi, starts_with("rank"),
+         ends_with("23_dollars"))
