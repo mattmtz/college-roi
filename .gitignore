@@ -1,2 +1,3 @@
-#ignore .Rhistory files
+#ignore following file types
 .Rhistory
+intermediate/
