@@ -242,8 +242,9 @@ test_dat %>%
 
 # Institutions do not change names over time
 test_dat %>%
-  filter(main == 1) %>%
-  group_by(opeid6, file_name) %>%
-  summarize(n = n_distinct(instnm)) %>% 
-  ungroup() %>% 
+  select(unitid, instnm) %>%
+  distinct() %>%
+  group_by(unitid) %>%
+  count(instnm) %>%
+  ungroup() %>%
   filter(n>1)

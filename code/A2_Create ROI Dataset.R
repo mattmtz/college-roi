@@ -22,6 +22,9 @@ library(janitor)
 library(openxlsx)
 library(FinCal)
 
+# Define constants
+r = 0.00
+
 #### (0) SETUP ----------------------------------------------------------------
 
 # Key files
@@ -41,7 +44,7 @@ KEYVARS <- c("MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
 STEMVARS <- c(paste0(rep("PCIP", 7), c("01","03","04","11","14","15","26",
                                        "27", "40", "41", "42")))
 
-ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR",
+ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR", "MAIN",
              "REGION", "PREDDEG", "ICLEVEL", "ADM_RATE", "OPENADMP", "UGDS", 
              "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P7",
              "MD_EARN_WNE_P8", "MD_EARN_WNE_P9", "MD_EARN_WNE_P10",
@@ -83,7 +86,7 @@ CLN_YRS <- function(x) {
     rename(p6 = md_earn_wne_p6, p7 = md_earn_wne_p7, p8 = md_earn_wne_p8,
            p9 = md_earn_wne_p9, p10= md_earn_wne_p10, p11= md_earn_wne_p11) %>%
     # Add years & file name
-    mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]"),
+    mutate(year = str_extract(KEYFILES[x], "[:digit:]+_[:digit:]+"),
            file_name = KEYFILES[x])
   
   # Add to overall dataset
@@ -161,7 +164,7 @@ full_dat <- deduped_data %>%
 
 #### (3) CREATE ROI DATASET ---------------------------------------------------
 
-roi_data <- full_dat %>%
+npv_data <- full_dat %>%
   # create cost measure
   rowwise() %>%
   mutate(netprice = mean(c(npt4_pub, npt4_priv, npt4_prog, npt4_other),
@@ -179,7 +182,8 @@ roi_data <- full_dat %>%
          p7 = ifelse(is.na(p7), p6 + d8_6/2, p7),
          p8 = ifelse(is.na(p8), p7 + d9_7/2, p8),
          p9 = ifelse(is.na(p9), p8 + d10_8/2, p9),
-         p10 = ifelse(is.na(p10), p9 + d11_9/2, p10)) %>%
+         p10 = ifelse(is.na(p10), p9 + d11_9/2, p10),
+         p11 = ifelse(is.na(p11), p10, p11)) %>%
   mutate(p5 = p6 - avg_earn) %>%
   mutate(p4 = p5 - avg_earn) %>%
   mutate(p3 = p4 - avg_earn) %>%
@@ -188,24 +192,58 @@ roi_data <- full_dat %>%
   mutate(debt_mdn = as.numeric(debt_mdn)) %>%
   mutate(rop = p10/netprice - 1,
          debt_roi = p10/debt_mdn - 1) %>%
-  # rankings
-  group_by(year) %>%
-  mutate(rank_rop = min_rank(-round(rop,2)),
-         rank_debt_roi = min_rank(-debt_roi),
-         rank_netprice = min_rank(-round(netprice,2)),
-         rank_earn = min_rank(-p10),
-         rank_debt = min_rank(-debt_mdn),
-         rank_grad_rate = min_rank(-grad_rate)) %>%
-  ungroup() %>%
-  mutate(across(c(p2, p3, p4, p5, p6, p7, p8, p9, p10,
+  mutate(across(c(p2, p3, p4, p5, p6, p7, p8, p9, p10, p11,
                 debt_mdn, netprice, avg_earn), 
-         ~.x*Y2023/cps_deflator, .names = "{.col}_23_dollars"))
+         ~.x*Y2023/cps_deflator))
+
+#### (4) CALCULATE NPVS -------------------------------------------------------
+
+# Create NPV function
+NPVFUN <- function(x) {
+  
+  npv_calc <- npv_data %>%
+    select(year, unitid, opeid6, netprice, iclevel, starts_with("p")) %>%
+    select(-c(pbi)) %>%
+    rowwise() %>%
+    mutate(
+      baNPV = npv(r=r, cf = c(rep(-netprice,5), c(p6, p7, p8, p9, p10,
+                                                  rep(p11, x-10)))),
+      aaNPV = npv(r=r, cf = c(rep(-netprice,3), c(p4, p5, p6, p7, p8, p9,
+                                                  p10, rep(p11, x-10)))),
+      crNPV = npv(r=r, cf = c(-netprice, p2, p3, p4, p5, p6, p7, p8, p9,
+                              p10, rep(p11, x-10)))) %>%
+    ungroup() %>%
+    mutate(npv_int = case_when(
+      preddeg == "Bachelor's"          ~ baNPV,
+      preddeg == "Associate's"         ~ aaNPV,
+      preddeg == "Certificate" & 
+        iclevel == "Less than 2-year"  ~ crNPV, 
+      preddeg == "Certificate" & 
+        iclevel == "4-year"            ~ baNPV, 
+      T                                ~ aaNPV)) %>%
+    select(year, unitid, opeid6, npv_int)
+  
+  npv_data <- left_join(npv_data, npv_calc)
+  return(npv_data)
+}
+
+# Calculate NPVs
+npv_data <- NPVFUN(10) %>% rename(npv10 = npv_int)
+npv_data <- NPVFUN(15) %>% rename(npv15 = npv_int)
+npv_data <- NPVFUN(20) %>% rename(npv20 = npv_int)
+npv_data <- NPVFUN(30) %>% rename(npv30 = npv_int)
+npv_data <- NPVFUN(40) %>% rename(npv40 = npv_int)
 
 # Export data
-fwrite(roi_data, "intermediate/roi_data.csv")
+fwrite(npv_data, "intermediate/roi_data.csv")
 
 # Export dataset for data tool
-data_tool_df <- roi_data %>%
-  select(file_name, year, unitid, opeid, opeid6, instnm, control, stabbr,
-         region, preddeg, iclevel, rop, debt_roi, starts_with("rank"),
-         ends_with("23_dollars"))
+data_tool_df <- npv_data %>%
+  select(file_name, year, unitid, opeid, opeid6, instnm, main, control, stabbr,
+         region, preddeg, iclevel, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, 
+         netprice, starts_with("npv")) %>%
+  # Add flag for p7, p9, p11 years
+  mutate(odd_yr_earnings_flag = ifelse(year %in% c("2018_19", "2019_20"),
+                                       1, 0))
+
+fwrite(data_tool_df, "intermediate/data_tool.csv")
