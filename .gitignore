@@ -1,3 +1,4 @@
 #ignore following file types
 .Rhistory
 intermediate/
+*.synctex

@@ -1,0 +1,388 @@
+\documentclass[12pt]{article}
+
+\usepackage[margin = 0.75in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{adjustbox}
+\usepackage{booktabs}
+\usepackage{centernot}
+\usepackage{csquotes}
+\usepackage{graphicx} 
+\graphicspath{{output/_LaTeX/}}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[colorlinks=true, urlcolor=blue, linkcolor=black]{hyperref}
+\usepackage[compact]{titlesec}
+	\titlespacing{\section}{1pt}{2ex}{1ex}
+	\titlespacing{\subsection}{0pt}{2ex}{0ex}
+	\titlespacing{\subsubsection}{0pt}{2ex}{0ex}
+\usepackage[shortlabels]{enumitem}
+\setlist[itemize]{itemsep=0.3pt, topsep=0pt}
+\setlist[enumerate]{itemsep=0.3pt, topsep=0pt}
+
+\usepackage{apacite}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{8pt}
+\numberwithin{equation}{section}
+
+\newcommand{\Varnm}[1]{\texttt{\textcolor{Blue}{#1}}}
+
+\begin{document}
+\title{ \vspace{-1.2cm} Determinants of College ROI}
+\author{Matt Martinez}
+\date{\today}
+\maketitle{}
+This memo summarizes the analysis performed on the College ROI dataset created from the College Scorecard data. The memo has three main sections:
+\begin{enumerate}
+\item \textbf{Pre-Analysis}: This section explores the raw data and summarizes the plan for assessing the determinants of high post-enrollment earnings/NPVs. 
+\item \textbf{Analysis}: This section is primarily concerned with correlation and regression analyses, with additional postestimation diagnostic testing for the regressions.
+\item \textbf{Appendix}: This section includes discussions that are potentially useful for future analysis.
+\end{enumerate} 
+\section{Pre-Analysis}
+
+The dataset consists of 8 unique files spanning the 2009/10 to the 2020/21 calendar years, plus a composite \enquote{Most Recent} file that fills in gaps in the most recent annual data file with the most recent prior year's information. The panel is not perfectly balanced: just under 60\% of \Varnm{unitid}'s appear all 8 times in the data (excluding the \enquote{Most Recent} file):
+\begin{figure}[h!]
+\caption{Panel Balance Summary}
+\includegraphics[width=5.08in]{panel_balance_summary.png}
+\centering
+\end{figure}
+
+\subsection{Institution Types of Interest}
+Institutions can be classified in many different ways, but we will primarily focus on three categorical variables:
+\begin{itemize}
+\item \Varnm{control}: control of institution (i.e., public, private non-profit, or private for-profit).  34\% of the observations are for private for-profit institutions, 27\% are for private nonprofit institutions, and 39\% are for public institutions.
+%\item \Varnm{region}: IPEDS region. There are 8 primary regions (Far West, Great Lakes, Mid East, New England, Plains, Rocky Mountains, Southeast, and Southwest), plus 9 observations for U.S. service schools and 1,000 for Outlying Areas, which are primarily in Puerto Rico and Guam. 
+\item \Varnm{preddeg}: predominant undegraduate degree awarded (Associate's, Bachelor's, or Certificate). In the most recent data, 21\% of the observations are for Associate's-level institutions, 38\% are for Bachelor's-level institutions, and the remaining 41\% are Certificate-level institutions.
+\item \Varnm{iclevel}: level of institution (i.e., less than two-year, two-year, or four-year). In the most recent data, 30\% of institutions are primarily two-year institutions, 46\% are primarily four-year, and the remaining 24\% are primarily less-than-two-year institutions.
+%\item \Varnm{ccbasic}: Carnegie classification (basic). There are 33 unique values for this variable.
+\end{itemize}
+These variables are \textit{mostly} time-invariant. The variables \Varnm{control}, \Varnm{preddeg}, and \Varnm{iclevel} are all are fully populated, but have between 1\% and 11\% of observations that change (usually only once) over the span of the data. %The \Varnm{ccbasic} variable is time-invariant, with the caveat that nearly 40\% of the observations are missing; even in the \enquote{Most Recent} file, 30\% of the observations are missing.
+
+The \Varnm{preddeg} and \Varnm{iclevel} variables are closely related. Only institutions classified as \enquote{Certificate} by the \Varnm{preddeg} variable have an \Varnm{iclevel} value of \enquote{less than 2-year,} across all years of data. Looking at the most recent data,\footnote{The following trends broadly hold across all years of data.} primarily Bachelor's degree-granting institutions are exclusively four-year institutions, and they make up about 82\% of the institutions classified as four-year. The only \Varnm{iclevel} category that cuts across multiple \Varnm{preddeg} values is the \enquote{2-year}, which is split roughly evenly between the primarily Associate's-granting and Certificate-granting institutions. Around 70\% of Associate's-granting institutions are 2-year. The following analysis will focus on the \Varnm{preddeg} variable instead of \Varnm{iclevel}.
+
+\subsection{Dependent Variables of Interest}
+The dataset includes multiple post-enrollment earnings as well as calculated NPV measures by time since enrollment. However, due to the nature of the NPV calculations,\footnote{We extrapolated 10- or 11-year post-enrollment earnings for all future cash flows.} the 10-year earnings (variable name \Varnm{p10}) correlates strongly with the NPV measures (variable name format \Varnm{npv\#\#}).
+\input{output/_LaTeX/depvar_correls_mr.tex}
+
+Note that the later NPV calculations (\Varnm{npv15} and higher) all have high degrees of correlation with each other and with 10-year earnings, but \Varnm{npv10} has particularly low correlations with both 10-year earnings and the other NPV variables. This is due to underlying heterogeneity in institution program lengths: enrollees in Bachelor's programs will not have positive earnings recorded as part of their NPV calculations until six years after enrollment,\footnote{We assume students take five years to complete the degree. These students will also have \textit{negative} cash flows in terms of \Varnm{netprice} for the first five years after enrollment.} whereas enrollees in Associate's programs will have positive earnings recorded by the fourth year after enrollment, and most\footnote{We use the \Varnm{iclevel} variable to categorize Certificate programs by length of program, but the majority of programs are less than two-year programs.} enrollees in Certificate programs will have positive earnings recorded by the second year after enrollment. This heterogeneity is what drives the low correlations between \Varnm{npv10} and all other dependent variables. Consider Figure \ref{fig:p10_npv_correlations_by_preddeg_mr} below, which plots \Varnm{p10} against \Varnm{npv10} and \Varnm{npv20}, split by \Varnm{preddeg}:
+
+\begin{figure}[h!]
+\caption{Earnings and NPVs by \Varnm{preddeg}}
+\label{fig:p10_npv_correlations_by_preddeg_mr}
+\includegraphics[width=7.08in]{p10_npv_correlations_by_preddeg_mr.png}
+\centering
+\end{figure}
+From the left panel of Figure \ref{fig:p10_npv_correlations_by_preddeg_mr}, it is clear that the correlation between \Varnm{p10} and \Varnm{nvp10} \textit{by institution type} are much higher than the overall correlation between \Varnm{p10} and \Varnm{npv10}.
+
+NPV measures past 10 years are effectively collinear with \Varnm{p10} even without controlling for \Varnm{preddeg}.
+\newpage
+Even with the high degree of correlation between \Varnm{p10} and the NPV variables, our analysis will include three outcome measures:
+\begin{itemize}
+\item 10-year earnings (\Varnm{p10}): Since this measure is independent of cost, it allows us to check the impact of costs on earnings directly.
+\item 10-year NPV (\Varnm{npv10}): This measure incorporates cost and is the least correlated with \Varnm{p10}, even when looking within \Varnm{preddeg} values.
+\item 40-year NPV (\Varnm{npv40}): This measure is often used in reporting. Although it is effectively collinear with 10-year earnings, it may be worth having these results handy. If necessary, it will be easy to change this to any of the other later NPV variables (e.g., \Varnm{npv20}).
+\end{itemize}
+Since our data is a cross-sectional time series, we may want to consider how ROI changes over time as well as across institutions. However, Table 2 below shows that within-institution variation is significantly smaller than between-institution variation: 
+\input{output/_LaTeX/depvars_sumstats.tex}
+
+Finally, note that our ROI variables have strong right tails (which is to be expected):
+\begin{figure}[h!]
+\caption{ROI Variable Kernel Density Distributions}
+\label{fig:full_depvar_kdensity_mr}
+\includegraphics[width=7.08in]{full_depvar_kdensity_mr.png}
+\centering
+\end{figure}
+
+\subsection{Explanatory Variables of Interest}
+As a starting point, there are 7 key variables we will investigate:
+\begin{itemize}
+\item \Varnm{adm\_rate}: admission rate.\footnote{Note that the raw data has missing values for \Varnm{adm\_rate} about 60\% of the time. However, the \Varnm{openadmp} variable shows that nearly all of these institutions are open admission.}
+\item \Varnm{stem\_pct}: percent of degrees awarded in STEM fields.
+\item \Varnm{ugds}: undergraduate student enrollment.
+\item \Varnm{grad\_rate}: completion rate for first-time, full-time students (150\% of expected time).
+\item \Varnm{pctpell}: proportion of undergraduates receiving Pell grants.
+\item \Varnm{pctfloan}: proportion of undergraduates receiving federal loans.
+\item \Varnm{netprice}: average net price for institution's largest program.\footnote{Note that this variable can only be incorporated into analysis of the earnings variables (not the NPV variables) since it is a component of NPV.}
+\end{itemize}
+
+The \Varnm{adm\_rate} variable, which has a $[0,1]$ range, has a significant portion of observations with a corner value; around 40\% of institutions covered by the data are classified as \enquote{open admission,} (i.e., have a value of 1).  These institutions are primarily Certificate- and Associate's degree-granting institutions.\footnote{81\% of Associate's programs and 92\% of Certificate programs in the data are open admission.} In contrast, 87\% of Bachelor's degree-granting institutions are not open admission. Additionally, 84\% of private for-profit institutions are open admissions, while 66\% of public institutions are open admission. Conversely, only 17\% of private nonprofit institutions are open admission.
+
+Similarly, the \Varnm{stem\_pct} variable, which also has a $[0,1]$ range, has around 40\% of observations with no STEM degrees awarded. 76\% of these institutions are Certificate-granting institutions. Furthermore, 77\% of the institutions with no STEM degrees awarded are private, for-profit institutions.
+
+The \Varnm{pctpell} and \Varnm{pctfloan} variables differ significantly by institution type. Figure \ref{fig:aid_pct_kdensity_mr} below shows the kernel density estimates for these variables by \Varnm{control} and \Varnm{preddeg}. For-profit institutions and primarily Certificate-granting institutions have much higher percentages of Pell Grant recipients than nonprofit/public institutions and primarily Associate's- or Bachelor's-granting institutions. Public institutions and primarily Associate's-granting institutions have noticeably lower federal loan percentages than other institution types.
+\newpage
+
+\begin{figure}[h!]
+\caption{Grant/Loan Kernel Density Distributions by Institution Types}
+\label{fig:aid_pct_kdensity_mr}
+\begin{adjustbox}{center}
+\includegraphics[width=7.58in]{aid_pct_kdensity_mr.png}
+\end{adjustbox}
+\centering
+\end{figure}
+
+For all of the rate- or percent-based variables, we considered changes \textit{across} institutions as well as changes \textit{within} institutions over time. That is, we looked at the spread of values across institutions over the entire dataset as well as the spread of each institution's values over time. We compared the resulting \enquote{between} standard deviations to the \enquote{within} standard deviations to see if differences were pronounced across institutions or within given institutions over time.
+
+Table 3 below shows the \enquote{within} standard deviation is an order of magnitude smaller than the \enquote{between} variation. This means that over the roughly 12-year period covered by our data, institutions (not unexpectedly) maintain many of the same characteristics over time.
+\newpage
+\input{output/_LaTeX/rate_vars_sumstats.tex}
+
+\subsection{Econometric Approach}
+The first task of the analysis will be to establish correlations between the independent variables and ROI generally. One of the key questions in this analysis is what observable institution characteristics correlate with ROI. Simple correlation matrices offer a good starting point. In addition to the simple correlation analysis, we would like to take a more detailed approach. A regression framework offers a channel for us to explore trends more rigorously. Ideally, we would hope to establish a \textit{causal} relationship between institution characteristics and ROI, but even if we are not able to do so, a regression analysis will always yield at least \textit{linear projection parameters}, which effectively represent a zero-mean error correlation between ROI and the independent variables of interest.
+
+Given the low within-institution variation of both the dependent and independent variables, we will begin analysis by ignoring the panel setup of our data and focus only on the \enquote{Most Recent} data produced by the College Scorecard. Although much less rich of a dataset, filtering to the \enquote{Most Recent} data may allow us to use OLS to estimate more straightforward results. We can perform postestimation testing to ensure that basic OLS assumptions hold and adjust accordingly.
+
+Finally, in addition to analysis across all institutions, we will conduct separate analyses by \Varnm{preddeg} (predominant undergraduate degree awarded), since Associate's-granting institutions are fundamentally different than Bachelor's-granting institutions, and both are fundamentally different than Certificate-granting institutions. From the variable summaries above, we have strong reason to suspect that correlations/effects may be mediated by \Varnm{preddeg}.
+
+%\subsection{Hypotheses}
+%\begin{itemize}
+%\item More selective institutions will have higher ROI (\Varnm{adm\_rate} will be negatively correlated with ROI) regardless of program type or institution type.
+%\item Higher graduation rates will be positively correlated with ROI, regardless of program type or institution type.
+%\item Higher STEM focus will lead to higher ROI for Bachelor's programs, but not necessarily for Associate's or Certificate programs.
+%\item 4-year institutions will have higher long-term ROI than shorter-term institutions.
+%\item undergraduate student enrollment will have negligible effects on ROI, except at for-profit schools where the effect will be negative.
+%\end{itemize}
+\newpage
+\section{Analysis}
+\subsection{Correlations}
+First, we consider the basic relationship between ROI measures and the independent variables of interest at the most aggregate level (across institution types):
+
+\begin{table}[ht]
+\caption{Aggregate-level ROI Correlations}
+\label{tab:agg_correls_mr}
+\begin{adjustbox}{center}
+\begin{tabular}{@{}lcccccccccc@{}}
+\hline\hline
+\input{output/_LaTeX/agg_correls_mr.tex}\\[-9pt] \hline\hline
+\multicolumn{11}{l}{\footnotesize Note: Table only uses Most Recent file.}\\
+\end{tabular}
+\end{adjustbox}
+\end{table}
+Across institutions, there seems to be very little relationship between undergraduate student size (\Varnm{ugds}), completion rates (\Varnm{grad\_rate}), and net price (\Varnm{netprice}) and any of the three ROI variables. Admissions rate (\Varnm{adm\_rate}) and percent of degrees awarded in STEM fields (\Varnm{stem\_pct}) seem to correlate modestly with \Varnm{p10}, with the expected signs.\footnote{That is, lower admissions rates are correlated with higher \Varnm{p10} and higher percentages of STEM degrees awarded are correlated with higher \Varnm{p10}.} Interestingly, \Varnm{pctpell} has a moderate \textit{negative} correlation with \Varnm{p10} while \Varnm{pctfloan} is almost entirely uncorrelated. 
+
+Generally speaking, all independent variables have extremely low correlations with \Varnm{npv10}. \Varnm{pctfloan} is the only variable that has a \textit{higher} correlation to \Varnm{npv10} than the other outcome variables, but that correlation is only -0.21. 
+
+One of the most surprising results from Table \ref{tab:agg_correls_mr} is the low correlation between graduation rates and all three ROI measures. We would expect to see a high degree of correlation between completion of postsecondary education and any kind of earnings measure. This result could signal that this correlation matrix is too aggregate to be helpful, and that further breakdown is necessary.
+
+Table \ref{tab:preddeg_correls_mr} below shows the same correlations but broken down by \Varnm{preddeg} (and omitting the correlations between the independent variables for simplicity):
+\newpage
+
+%\begin{table}[ht!]
+%\caption{Correlations by Primary Degree Granted (\Varnm{preddeg})}
+%\label{fig:preddeg_correls_mr}
+%\centering
+%\begin{tabular}{@{}lccc@{}}
+%\hline\hline \\[-6pt]
+%\textbf{Associate's}
+%\input{output/_LaTeX/associates_correls_mr.tex} \\[-9pt]
+%\hline \\ [-6pt] \textbf{Bachelor's}
+%\input{output/_LaTeX/bachelors_correls_mr.tex} \\[-9pt]
+%\hline \\[-6pt] \textbf{Certificate}
+%\input{output/_LaTeX/certificate_correls_mr.tex}\\[-9pt] \hline\hline
+%\multicolumn{4}{l}{\footnotesize Note: Table only uses Most Recent file.}\\
+%\end{tabular}
+%\end{table}
+
+\begin{table}[ht!]
+\caption{Correlations by primary degree granted (\Varnm{preddeg})}
+\label{tab:preddeg_correls_mr}
+\centering
+\begin{adjustbox}{center}
+\begin{tabular}{c c c}
+\hline\hline\\[-9pt]
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Associate's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/associates_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Bachelor's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/bachelors_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Certificate}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/certificate_correls_mr.tex}
+\end{tabular}
+\\[-12pt] \hline\hline
+\multicolumn{1}{l}{\footnotesize Note: Table only uses Most Recent file.}
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+Table \ref{tab:preddeg_correls_mr} shows low correlations for all explanatory variables except when \Varnm{preddeg} is \enquote{Bachelor's.} Primarily Bachelor's-granting institutions show moderately strong positive correlations between the graduation rate and 10-year earnings ($\rho=0.60$)  and \Varnm{pctpell} and 10-year earnings ($\rho=-0.57$). Looking across institution types, Table \ref{tab:preddeg_correls_mr} shows that \Varnm{adm\_rate} and \Varnm{stem\_pct} have the strongest correlation with 10-year earnings for Bachelor's degree institutions. However, both \Varnm{adm\_rate} and \Varnm{stem\_pct} have \textit{lower} correlation coefficients than in Table \ref{tab:agg_correls_mr}. We can further disaggregate institutions by the \Varnm{control} variable. Tables \ref{tab:public_preddeg_correls_mr}, \ref{tab:nonprofit_preddeg_correls_mr}, and \ref{tab:forprofit_preddeg_correls_mr} below replicate Table \ref{tab:preddeg_correls_mr}, but filtered to public, nonprofit, and for-profit institutions, respectively:
+
+%%%%%%%%%%%%%%%%%% PUBLIC INSTITUTIONS BY PREDDEG %%%%%%%%%%%%%%%%%%%%%%
+\begin{table}[ht!]
+\caption{Correlations by primary degree granted (\Varnm{preddeg}) in public institutions}
+\label{tab:public_preddeg_correls_mr}
+\centering
+\begin{adjustbox}{center}
+\begin{tabular}{c c c}
+\hline\hline\\[-9pt]
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Associate's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/public_associates_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Bachelor's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/public_bachelors_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Certificate}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/public_certificate_correls_mr.tex}
+\end{tabular}
+\\[-12pt] \hline\hline
+\multicolumn{1}{l}{\footnotesize Note: Table only uses Most Recent file.}
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+For associate's-granting public institutions, Table \ref{tab:public_preddeg_correls_mr} shows \Varnm{pctpell} is moderately negatively correlated with all earnings measures. For bachelor's-granting institutions, \Varnm{grad\_rate} has a nearly identical correlation, but \Varnm{adm\_rate} and \Varnm{pctpell} are smaller by 0.1 while \Varnm{stem\_pct} is up by 0.1 (around $\rho = 0.5$). \Varnm{pct\_stem} ($\rho = 0.51$). For certificate-granting institutions, \Varnm{pctfloan} and \Varnm{netprice} both have a correlation of around $\rho = 0.5$ across all earnings measures.
+
+%%%%%%%%%%%%%%%%%% NONPROFIT INSTITUTIONS BY PREDDEG %%%%%%%%%%%%%%%%%%%%
+\begin{table}[ht!]
+\caption{Correlations by primary degree granted (\Varnm{preddeg}) in nonprofit institutions}
+\label{tab:nonprofit_preddeg_correls_mr}
+\centering
+\begin{adjustbox}{center}
+\begin{tabular}{c c c}
+\hline\hline\\[-9pt]
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Associate's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/nonprofit_associates_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Bachelor's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/nonprofit_bachelors_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Certificate}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/nonprofit_certificate_correls_mr.tex}
+\end{tabular}
+\\[-12pt] \hline\hline
+\multicolumn{1}{l}{\footnotesize Note: Table only uses Most Recent file.}
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+Table \ref{tab:nonprofit_preddeg_correls_mr} shows moderate correlations between \Varnm{adm\_rate}, \Varnm{grad\_rate}, and \Varnm{pct\_pell} and the earnings measures for primarily associate's-granting nonprofit institutions (all around $\rho = 0.5$). For primarily bachelor's-granting nonprofit institutions, \Varnm{grad\_rate} correlates strongly with 10-year earnings ($\rho = 0.65$), while \Varnm{pct\_pell} has a strong negative correlation with 10-year earnings ($\rho = -0.65$). \Varnm{adm\_rate}, \Varnm{stem\_pct}, and \Varnm{net\_price} all have moderate correlations with 10-year earnings. For primarily certificate-granting nonprofit institutions, the only moderately strong correlation comes from \Varnm{pct\_pell}.
+
+%%%%%%%%%%%%%%%%%% FOR PROFIT INSTITUTIONS BY PREDDEG %%%%%%%%%%%%%%%%%%%%
+\begin{table}[ht!]
+\caption{Correlations by primary degree granted (\Varnm{preddeg}) in for-profit institutions}
+\label{tab:forprofit_preddeg_correls_mr}
+\centering
+\begin{adjustbox}{center}
+\begin{tabular}{c c c}
+\hline\hline\\[-9pt]
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Associate's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/forprofit_associates_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Bachelor's}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/forprofit_bachelors_correls_mr.tex}
+\end{tabular}
+\quad\quad
+\begin{tabular}{@{}lccc@{}}
+\multicolumn{4}{c}{\textbf{Certificate}} \\[-3pt]
+\cmidrule{1-4}\\[-28pt]
+\input{output/_LaTeX/forprofit_certificate_correls_mr.tex}
+\end{tabular}
+\\[-12pt] \hline\hline
+\multicolumn{1}{l}{\footnotesize Note: Table only uses Most Recent file.}
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+Table \ref{tab:forprofit_preddeg_correls_mr} shows no correlations that are even moderately strong, across all values of \Varnm{preddeg}, except for \Varnm{netprice} and 10-year earnings ($\rho = 0.46$) for primarily certificate-granting institutions.
+
+\subsection{Graphical Analysis}
+Although the tables above are helpful, graphical representations of key correlations are often easier to interpret quickly. We will focus on \Varnm{p10} as the key outcome measure.
+
+One surprising result from above is the lack of correlation between admissions rates (\Varnm{adm\_rate}) and 10-year earnings (\Varnm{p10}):
+
+\begin{figure}[h!]
+\caption{Admissions Rate Relationship to 10-Year Earnings}
+\label{fig:aid_p10_relationship}
+\begin{adjustbox}{center}
+\includegraphics[width=7.0in]{../p10_admrate_correlations_by_preddeg_mr.png}
+\end{adjustbox}
+\centering
+\end{figure}
+
+From the figure above, we can see that a near-majority of associate's-level and certificate-level institutions are open admissions, which explains the low correlations. For bachelor's-level institutions, there seems to be a stronger relationship between earnings and admissions rates for institutions with admissions rates below 50\%.
+
+Another interesting result from the tables above is that graduation rates only seem to correlate with 10-year earnings for bachelor's-level institutions and nonprofit associate's-level institutions. Again, a scatter plot allows further examination of the relationship.
+
+\begin{figure}[h!]
+\caption{Graduation Rate Relationship to 10-Year Earnings}
+\label{fig:grad_rate_p10_relationship}
+\begin{adjustbox}{center}
+\includegraphics[width=7.0in]{../p10_gradrate_correlations_by_preddeg_mr.png}
+\end{adjustbox}
+\centering
+\end{figure}
+
+From Figure \ref{fig:grad_rate_p10_relationship}, we can see that many associate’s-level programs have a lower general range of graduation rates and the largest benefits of bachelor’s-level institution graduation rates come for institutions at the higher end of the range. Certificate-granting institutions do not appear to show any relationship between graduation rates and 10-year earnings, nor do for-profit institutions across all program types.
+
+A third striking result from the tables above was the persistent, negative relationship between the percentage of Pell Grant recipients and 10-year earnings:
+
+\begin{figure}[h!]
+\caption{Pell Grant Share Relationship to 10-Year Earnings}
+\label{fig:pct_pell_p10_relationship}
+\begin{adjustbox}{center}
+\includegraphics[width=7.0in]{../p10_pctpell_correlations_by_preddeg_mr.png}
+\end{adjustbox}
+\centering
+\end{figure}
+
+It appears that the relationship between Pell Grant share and 10-year earnings is present in associate's-level institutions but not nearly as strong as in bachelor's-level institutions.
+
+\newpage
+\subsection{Regressions}
+Although we have some sense of correlations, we do not yet have a sense of the magnitude of the relationships between the ROI variables and our independent variables of interest. Table 9 below shows a simple OLS regression of the three key logged ROI variables (\Varnm{ln\_p10}, \Varnm{ln\_npv10}, \Varnm{ln\_npv40}) on the numeric independent variables, controlling for key institution characteristics. Note that the excluded category is public, primarily Bachelor's degree-granting institutions:
+
+\input{output/_LaTeX/agg_regs.tex}
+
+\newpage
+Table 9 shows that primarily Certificate-granting institutions, less-than 2-year institutions, and private for-profit institutions are negatively correlated with the logged ROI variables. For a more granular view, Table 10 below shows the same regressions but performed individually across the three values of \Varnm{preddeg}:
+
+\input{output/_LaTeX/preddeg_regs.tex}
+
+\newpage
+\section{Appendix}
+
+\subsection{\Varnm{preddeg} vs. \Varnm{iclevel}}
+In order to compute the ROI measures, we assume that students are enrolled toward obtaining the institution's predominant degree (using the \Varnm{preddeg} variable). If the institution is predominantly an associate’s degree institution, then we assume that the student is enrolled for three years while if the predominant degree is a bachelor’s degree then we assume that the student is enrolled for five years.
+
+About 40 percent of institutions in the College Scorecard data are predominantly certificate institutions. These institutions can be further classified by the length of time required to earn the relevant certificate using the \Varnm{iclevel} variable: less than two years, two years, or (rarely) four years. For these institutions, we assume that students are enrolled for only one year if the data suggests that the institution requires less than two years of study. If a predominantly certificate institution is classified as requiring two years of study, we assume the student follows the same path as a student enrolled in a primarily associate’s degree institution (three years of enrollment). In the rare cases where a primarily certificate institution is classified as requiring four years of study, we assume the student follows the same path as a student enrolled in a primarily bachelor’s degree institution (five years of enrollment).
+
+Although the College Scorecard does classify predominantly associate’s degree institutions as either two-year or four-year institutions, many associate’s degree institutions are community colleges that also grant bachelor’s degrees. This makes easy delineations based on the two-year or four-year categories difficult to interpret cleanly, so for simplicity we assume that all primarily associate’s degree institutions enroll students for three years.
+
+\subsection{Panel Data Analysis}
+
+If we want to use the entire dataset, we will need to account for the fact that our data is a cross-sectional time series. We will ideally want to control for unobserved individual (i.e., institution-level) effects. However, we need to determine whether to use a \textbf{random effects} (RE) model or a \textbf{fixed effects} (FE) model. According to Oscar Torres-Reyna of Princeton:\footnote{See pp. 40-41, 43 of \enquote{\href{https://www.princeton.edu/~otorres/Panel101.pdf}{Panel Data Analysis: Fixed and Random Effects using Stata}.}}
+\begin{quote}
+If you have reason to believe that differences across entities have some influence on your dependent variable but are not correlated with the predictors, then you should use random effects. An advantage of random effects is that you can include time invariant variables (i.e. gender). In the fixed effects model these variables are absorbed by the intercept. Random effects assume that the entity's error term is not correlated with the predictors which allows for time-invariant variables to play a role as explanatory variables... [However, w]henever there is a clear idea that individual characteristics of each entity or group affect the regressors, use fixed effects.
+\end{quote}
+Before performing any analysis, it is difficult to predict with certainty whether RE or FE models are more appropriate. On one hand, we would like to check whether observable, time-invariant institution characteristics such as \Varnm{control} and \Varnm{preddeg} are important determinants of ROI. In this case, we would like to use an RE model. However, we might think that there are unobservable institution-level characteristics, such as reputation, that might be correlated with several of our independent variables, such as admission rate, number of undergraduates, and completion rates.\footnote{For example, I heard someone offhandedly say at Princeton that the university invests heavily in advising/mentoring programs for students at risk of failing partially because keeping graduation rates high helps maintain the university's prestige as a premier institution.} Thus, we could begin with RE models, but we would perform Hausman (DWH) specification tests on our models to see if we need to switch to FE models.
+\end{document}

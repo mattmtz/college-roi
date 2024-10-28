@@ -41,7 +41,7 @@ KEYVARS <- c("MD_EARN_WNE_P6", "MD_EARN_WNE_P8", "MD_EARN_WNE_P10",
              "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG", "NPT4_OTHER")
 
 # STEM variables
-STEMVARS <- c(paste0(rep("PCIP", 7), c("01","03","04","11","14","15","26",
+STEMVARS <- c(paste0(rep("pcip", 7), c("01","03","04","11","14","15","26",
                                        "27", "40", "41", "42")))
 
 ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR", "MAIN",
@@ -49,7 +49,7 @@ ALLVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "CONTROL", "STABBR", "MAIN",
              "C150_4", "C150_L4", "MD_EARN_WNE_P6", "MD_EARN_WNE_P7",
              "MD_EARN_WNE_P8", "MD_EARN_WNE_P9", "MD_EARN_WNE_P10",
              "MD_EARN_WNE_P11", "NPT4_PUB", "NPT4_PRIV", "NPT4_PROG",
-             "NPT4_OTHER", "DEBT_MDN", STEMVARS)
+             "NPT4_OTHER", "DEBT_MDN", "PCTPELL", "PCTFLOAN", STEMVARS)
 
 # List variables to convert to strings
 CHARVARS <- c("UNITID", "OPEID", "OPEID6", "INSTNM", "STABBR")
@@ -142,13 +142,20 @@ decoded_data <- filtered_df %>%
                                "Outlying Areas (AS, FM, GU, MH, MP, PR, PW, VI)"))) %>%
   droplevels()
 
-# Create enrollment categories, drop graduate institutions, & clean
-# graduation rate
+# Clean data
 cln_decoded_data <- decoded_data %>%
+  # Create enrollment categories
   mutate(ugdssize = forcats::fct_na_value_to_level(
     cut(ugds, breaks = c(0,250,500,1e7), 
         labels=c("<=250","251-500",">500"), include.lowest=TRUE))) %>%
-  filter(!preddeg %in% c(0,4))
+  # Drop graduate institutions
+  filter(!preddeg %in% c(0,4)) %>%
+  # Calculate STEM percentage
+  rowwise() %>%
+  mutate(stem_pct = sum(across(all_of(STEMVARS)))) %>%
+  ungroup() %>%
+  # Clean admissions rate
+  mutate(adm_rate = ifelse(openadmp == 1, 1, adm_rate))
 
 # De-duplicate
 deduped_data <- cln_decoded_data %>%
@@ -164,6 +171,7 @@ full_dat <- deduped_data %>%
 
 #### (3) CREATE ROI DATASET ---------------------------------------------------
 
+
 npv_data <- full_dat %>%
   # create cost measure
   rowwise() %>%
@@ -176,7 +184,8 @@ npv_data <- full_dat %>%
          d10_8 = p10 - p8,
          d9_7 = p9 - p7,
          d11_9 = p11 - p9) %>%
-  mutate(avg_earn = ifelse(is.na(p11), abs((d10_8 + d8_6)/4),
+  mutate(avg_earn = ifelse(is.na(p11) | is.na(p9) | is.na(p7),
+                           abs((d10_8 + d8_6)/4),
                            abs((d11_9 + d9_7)/4))) %>%
   mutate(p6 = ifelse(is.na(p6), p7 - avg_earn, p6),
          p7 = ifelse(is.na(p7), p6 + d8_6/2, p7),

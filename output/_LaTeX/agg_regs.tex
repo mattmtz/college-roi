@@ -1,0 +1,40 @@
+\begin{table}[htbp]\centering
+\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}
+\caption{Aggregate Regressions}
+\begin{tabular}{l*{3}{c}}
+\toprule
+                    &\multicolumn{1}{c}{(1)}&\multicolumn{1}{c}{(2)}&\multicolumn{1}{c}{(3)}\\
+                    &\multicolumn{1}{c}{ln\_p10}&\multicolumn{1}{c}{ln\_npv10}&\multicolumn{1}{c}{ln\_npv40}\\
+\midrule
+adm\_rate            &       -0.23\sym{***}&       -0.22\sym{***}&       -0.27\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+stem\_pct            &        0.30\sym{***}&        0.35\sym{***}&        0.31\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+ugds                &        0.00\sym{***}&        0.00\sym{***}&        0.00\sym{***}\\
+                    &      (0.00)         &      (0.01)         &      (0.00)         \\
+grad\_rate           &        0.15\sym{***}&        0.44\sym{***}&        0.20\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+pctpell             &       -0.51\sym{***}&       -0.44\sym{***}&       -0.64\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+pctfloan            &        0.30\sym{***}&        0.27\sym{***}&        0.42\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+netprice            &        0.00\sym{***}&                     &                     \\
+                    &      (0.00)         &                     &                     \\
+Associate's         &       -0.03\sym{**} &        0.59\sym{***}&        0.01         \\
+                    &      (0.01)         &      (0.00)         &      (0.34)         \\
+Certificate         &       -0.14\sym{***}&        0.59\sym{***}&       -0.08\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+Private for-profit  &       -0.35\sym{***}&       -0.38\sym{***}&       -0.26\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+Private nonprofit   &       -0.14\sym{***}&       -0.35\sym{***}&       -0.10\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+Constant            &       10.85\sym{***}&       11.90\sym{***}&       14.46\sym{***}\\
+                    &      (0.00)         &      (0.00)         &      (0.00)         \\
+\midrule
+Observations        &        4490         &        4441         &        4490         \\
+\(R^{2}\)           &       0.676         &       0.341         &       0.596         \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize \textit{p}-values in parentheses}\\
+\multicolumn{4}{l}{\footnotesize \sym{*} \(p<0.10\), \sym{**} \(p<0.05\), \sym{***} \(p<0.01\)}\\
+\end{tabular}
+\end{table}
