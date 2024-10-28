@@ -1,4 +1,5 @@
 #ignore following file types
 .Rhistory
-intermediate/
-*.synctex
+data_tool.csv
+roi_data.csv
+*.synctex.gz
